@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <input id="userId" placeholder="User ID">
+  <button onclick="join()">Join</button>
+  <hr>
+  <input id="toUser" placeholder="To (receiver)">
+  <input id="msg" placeholder="Message">
+  <button onclick="send()">Send</button>
+  <ul id="chat"></ul>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    let socket;
+    function join() {
+      const userId = document.getElementById('userId').value;
+      socket = io('http://localhost:3001');
+      socket.emit('join', userId);
+      socket.on('private_message', (msg) => {
+        const chat = document.getElementById('chat');
+        const li = document.createElement('li');
+        li.textContent = `[${msg.sender}] ${msg.content}`;
+        chat.appendChild(li);
+      });
+    }
+    function send() {
+      const sender = document.getElementById('userId').value;
+      const receiver = document.getElementById('toUser').value;
+      const content = document.getElementById('msg').value;
+      socket.emit('private_message', { sender, receiver, content });
+    }
+  </script>
+</body>
+</html>
