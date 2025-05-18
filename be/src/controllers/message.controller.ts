@@ -1,51 +1,54 @@
 import { Request, Response, RequestHandler } from "express"; // Import RequestHandler
 import Message from "../models/Message";
 import mongoose from "mongoose";
+import { logger } from '../utils/logger'; // Import logger
 
-// Get conversation between two users - Áp dụng RequestHandler và xử lý req.params
-export const getConversation: RequestHandler = async (req, res) => { // Thêm : RequestHandler
+// Get conversation between two users - Áp dụng RequestHandler và xử lý req.params + Logger
+export const getConversation: RequestHandler = async (req, res) => {
   try {
     // Thêm as string để làm rõ kiểu dữ liệu từ params
     const { userId, otherUserId } = req.params as { userId: string, otherUserId: string };
+    logger.info('Fetching conversation', { userId, otherUserId }); // Log thông tin
 
     // Validate ObjectIds
     if (!mongoose.Types.ObjectId.isValid(userId) ||
         !mongoose.Types.ObjectId.isValid(otherUserId)) {
+      logger.warn('Get conversation failed - Invalid user IDs', { userId, otherUserId }); // Log cảnh báo
       res.status(400).json({ error: "Invalid user IDs" });
-      return; // Thêm return sau khi gửi response
+      return;
     }
 
-    // Find messages where sender is userId and receiver is otherUserId
-    // OR sender is otherUserId and receiver is userId
+    // Find messages ...
     const messages = await Message.find({
       $or: [
         { sender: userId, receiver: otherUserId },
         { sender: otherUserId, receiver: userId },
       ],
     })
-      .sort({ createdAt: 1 }) // Sort by creation time ascending
-      .limit(100);          // Limit number of messages retrieved
+      .sort({ createdAt: 1 })
+      .limit(100);
 
+    logger.info('Successfully fetched conversation', { userId, otherUserId, messageCount: messages.length }); // Log thông tin thành công
     res.json(messages);
-    // Không cần return
   } catch (error) {
-    console.error("Error fetching conversation:", error); // Nên log lỗi
+    // Log lỗi server với logger.error
+    logger.error("Error fetching conversation", error, { userId: req.params.userId, otherUserId: req.params.otherUserId });
     res.status(500).json({ error: "Server error" });
-    // Không cần return
   }
 };
 
-// Mark messages as read - Áp dụng RequestHandler và xử lý req.params
-export const markAsRead: RequestHandler = async (req, res) => { // Thêm : RequestHandler
+// Mark messages as read - Áp dụng RequestHandler và xử lý req.params + Logger
+export const markAsRead: RequestHandler = async (req, res) => {
   try {
     // Thêm as string để làm rõ kiểu dữ liệu từ params
     const { userId, otherUserId } = req.params as { userId: string, otherUserId: string };
+    logger.info('Attempting to mark messages as read', { fromUser: otherUserId, toUser: userId }); // Log thông tin
 
-    // Update all unread messages from otherUserId to userId
-    await Message.updateMany(
+    // Update all unread messages ...
+    const result = await Message.updateMany( // Có thể log kết quả updateMany
       {
-        sender: otherUserId, // Sử dụng giá trị đã ép kiểu
-        receiver: userId,   // Sử dụng giá trị đã ép kiểu
+        sender: otherUserId,
+        receiver: userId,
         read: false,
       },
       {
@@ -53,34 +56,33 @@ export const markAsRead: RequestHandler = async (req, res) => { // Thêm : Reque
       }
     );
 
+    logger.info('Successfully marked messages as read', { fromUser: otherUserId, toUser: userId, updatedCount: result.modifiedCount }); // Log thông tin thành công
     res.json({ success: true });
-    // Không cần return
   } catch (error) {
-    console.error("Error marking messages as read:", error); // Nên log lỗi
+    // Log lỗi server với logger.error
+    logger.error("Error marking messages as read", error, { userId: req.params.userId, otherUserId: req.params.otherUserId });
     res.status(500).json({ error: "Server error" });
-    // Không cần return
   }
 };
 
-// Get user's recent conversations - Áp dụng RequestHandler và xử lý req.params
-export const getRecentConversations: RequestHandler = async (req, res) => { // Thêm : RequestHandler
+// Get user's recent conversations - Áp dụng RequestHandler và xử lý req.params + Logger
+export const getRecentConversations: RequestHandler = async (req, res) => {
   try {
-     // Thêm as string để làm rõ kiểu dữ liệu từ params
+    // Thêm as string để làm rõ kiểu dữ liệu từ params
     const { userId } = req.params as { userId: string };
+    logger.info('Fetching recent conversations for user', { userId }); // Log thông tin
 
-    // Aggregate to find the most recent message with each user
-    // Sử dụng new mongoose.Types.ObjectId(userId) vẫn hoạt động tốt nếu userId là string hợp lệ
+    // Aggregate ...
     const conversations = await Message.aggregate([
       {
         $match: {
           $or: [{ sender: new mongoose.Types.ObjectId(userId) }, { receiver: new mongoose.Types.ObjectId(userId) }],
         },
       },
-      {
-        $sort: { createdAt: -1 },
-      },
+      { $sort: { createdAt: -1 } },
       {
         $group: {
+          // Sử dụng _id nhất quán với Mongoose thay vì id
           _id: {
             $cond: {
               if: { $eq: ["$sender", new mongoose.Types.ObjectId(userId)] },
@@ -94,14 +96,12 @@ export const getRecentConversations: RequestHandler = async (req, res) => { // T
       {
         $lookup: {
           from: "users",
-          localField: "_id",
+          localField: "_id", // Sử dụng _id
           foreignField: "_id",
           as: "userInfo",
         },
       },
-      {
-        $unwind: "$userInfo",
-      },
+      { $unwind: "$userInfo" },
       {
         $project: {
           _id: 1,
@@ -110,16 +110,14 @@ export const getRecentConversations: RequestHandler = async (req, res) => { // T
           "userInfo.phone": 1,
         },
       },
-      {
-        $sort: { "lastMessage.createdAt": -1 },
-      },
+      { $sort: { "lastMessage.createdAt": -1 } },
     ]);
 
+    logger.info('Successfully fetched recent conversations', { userId, conversationCount: conversations.length }); // Log thông tin thành công
     res.json(conversations);
-    // Không cần return
   } catch (error) {
-    console.error("Error fetching recent conversations:", error); // Nên log lỗi
+    // Log lỗi server với logger.error
+    logger.error("Error fetching recent conversations", error, { userId: req.params.userId });
     res.status(500).json({ error: "Server error" });
-    // Không cần return
   }
 };

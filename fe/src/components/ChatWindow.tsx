@@ -1,0 +1,67 @@
+import type { RefObject } from "react"
+
+interface Message {
+  _id: string
+  sender: string
+  receiver: string
+  content: string
+  createdAt: string
+  read: boolean
+}
+
+interface ChatWindowProps {
+  messages: Message[]
+  currentUserId: string
+  loading: boolean
+  messagesEndRef: RefObject<HTMLDivElement>
+}
+
+const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWindowProps) => {
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+      {loading ? (
+        <div className="flex justify-center items-center h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        </div>
+      ) : (
+        <>
+          {messages.length === 0 ? (
+            <div className="flex justify-center items-center h-full text-gray-500">
+              No messages yet. Start the conversation!
+            </div>
+          ) : (
+            messages.map((message) => {
+              const isSentByMe = message.sender === currentUserId
+
+              return (
+                <div key={message._id} className={`mb-4 flex ${isSentByMe ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
+                      isSentByMe
+                        ? "bg-indigo-600 text-white rounded-br-none"
+                        : "bg-white text-gray-800 border border-gray-200 rounded-bl-none"
+                    }`}
+                  >
+                    <div>{message.content}</div>
+                    <div className={`text-xs mt-1 ${isSentByMe ? "text-indigo-200" : "text-gray-500"}`}>
+                      {formatTime(message.createdAt)}
+                      {isSentByMe && <span className="ml-2">{message.read ? "✓✓" : "✓"}</span>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </>
+      )}
+    </div>
+  )
+}
+
+export default ChatWindow
