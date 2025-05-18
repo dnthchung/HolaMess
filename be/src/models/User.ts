@@ -1,9 +1,9 @@
 // src/models/User.ts
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUser extends Document {
   phone: string;
-  password: string; // hash ở phiên bản thật
+  password: string; // Chưa hash, bản đơn giản
   name: string;
 }
 
@@ -13,4 +13,5 @@ const UserSchema = new Schema<IUser>({
   name: { type: String, required: true }
 });
 
-export default mongoose.model<IUser>("User", UserSchema);
+export default mongoose.model<IUser>('User', UserSchema);
+
