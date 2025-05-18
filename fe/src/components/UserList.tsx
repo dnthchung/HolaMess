@@ -1,21 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-
-interface User {
-  _id: string
-  name: string
-  phone: string
-}
-
-interface RecentConversation {
-  _id: string
-  userId: string
-  name: string
-  lastMessage: string
-  unreadCount: number
-  updatedAt: string
-}
+import type { User, RecentConversation } from "../types"
 
 interface UserListProps {
   users: User[]
@@ -27,25 +13,32 @@ interface UserListProps {
 const UserList = ({ users, selectedUser, onSelectUser, recentConversations }: UserListProps) => {
   // Combine users with recent conversations
   const enhancedUsers = useMemo(() => {
-    const recentUserIds = recentConversations.map((conv) => conv.userId)
+    // Map of all users by ID for quick lookup
+    const userMap = new Map<string, User>()
+    users.forEach((user) => userMap.set(user.id, user))
 
     // First add recent conversations
     const result = recentConversations.map((conv) => {
-      const user = users.find((u) => u._id === conv.userId)
+      // Use either the user from our users list or create one from the conversation data
+      const user = userMap.get(conv._id) || {
+        id: conv._id,
+        name: conv.userInfo?.name || "Unknown",
+        phone: conv.userInfo?.phone || "",
+      }
+
       return {
-        _id: conv.userId,
-        name: user?.name || conv.name,
-        phone: user?.phone || "",
-        lastMessage: conv.lastMessage,
-        unreadCount: conv.unreadCount,
-        updatedAt: conv.updatedAt,
+        ...user,
+        lastMessage: conv.lastMessage?.content || "",
+        unreadCount: conv.lastMessage?.read ? 0 : 1,
+        updatedAt: conv.lastMessage?.createdAt || "",
         isRecent: true,
       }
     })
 
     // Then add other users who don't have recent conversations
+    const recentUserIds = recentConversations.map((conv) => conv._id)
     users.forEach((user) => {
-      if (!recentUserIds.includes(user._id)) {
+      if (!recentUserIds.includes(user.id) && user.id) {
         result.push({
           ...user,
           lastMessage: "",
@@ -78,15 +71,25 @@ const UserList = ({ users, selectedUser, onSelectUser, recentConversations }: Us
     return date.toLocaleDateString([], { month: "short", day: "numeric" })
   }
 
+  const handleUserClick = (user: any) => {
+    // Ensure the user has a valid ID before selecting
+    if (user && user.id) {
+      console.log("Selected user:", user)
+      onSelectUser(user)
+    } else {
+      console.error("Attempted to select user with invalid ID:", user)
+    }
+  }
+
   return (
     <div className="overflow-y-auto h-[calc(100vh-64px)]">
       {enhancedUsers.map((user) => (
         <div
-          key={user._id}
+          key={user.id || `temp-${user.name}`}
           className={`p-3 border-b border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 ${
-            selectedUser?._id === user._id ? "bg-indigo-50" : ""
+            selectedUser?.id === user.id ? "bg-indigo-50" : ""
           }`}
-          onClick={() => onSelectUser(user)}
+          onClick={() => handleUserClick(user)}
         >
           <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-800 font-semibold mr-3">
             {user.name.charAt(0).toUpperCase()}

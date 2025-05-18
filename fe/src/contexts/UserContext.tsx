@@ -1,12 +1,7 @@
 "use client"
 
 import { createContext, useState, useContext, type ReactNode } from "react"
-
-interface User {
-  _id: string
-  name: string
-  phone: string
-}
+import type { User } from "../types"
 
 interface UserContextType {
   user: User | null
@@ -17,11 +12,32 @@ const UserContext = createContext<UserContextType | undefined>(undefined)
 
 export const UserProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem("user")
-    return savedUser ? JSON.parse(savedUser) : null
+    try {
+      const savedUser = localStorage.getItem("user")
+      if (savedUser) {
+        const parsedUser = JSON.parse(savedUser)
+        console.log("Loaded user from localStorage:", parsedUser)
+        return parsedUser
+      }
+      return null
+    } catch (error) {
+      console.error("Error parsing user from localStorage:", error)
+      localStorage.removeItem("user")
+      return null
+    }
   })
 
-  return <UserContext.Provider value={{ user, setUser }}>{children}</UserContext.Provider>
+  const updateUser = (newUser: User | null) => {
+    console.log("Updating user:", newUser)
+    setUser(newUser)
+    if (newUser) {
+      localStorage.setItem("user", JSON.stringify(newUser))
+    } else {
+      localStorage.removeItem("user")
+    }
+  }
+
+  return <UserContext.Provider value={{ user, setUser: updateUser }}>{children}</UserContext.Provider>
 }
 
 export const useUser = () => {

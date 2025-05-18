@@ -1,13 +1,5 @@
 import type { RefObject } from "react"
-
-interface Message {
-  _id: string
-  sender: string
-  receiver: string
-  content: string
-  createdAt: string
-  read: boolean
-}
+import type { Message } from "../types"
 
 interface ChatWindowProps {
   messages: Message[]
@@ -37,9 +29,11 @@ const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWi
           ) : (
             messages.map((message) => {
               const isSentByMe = message.sender === currentUserId
+              // Use a combination of ID and content for key to ensure uniqueness
+              const messageKey = `${message._id}-${message.content.substring(0, 10)}-${message.createdAt}`
 
               return (
-                <div key={message._id} className={`mb-4 flex ${isSentByMe ? "justify-end" : "justify-start"}`}>
+                <div key={messageKey} className={`mb-4 flex ${isSentByMe ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
                       isSentByMe

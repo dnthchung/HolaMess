@@ -27,7 +27,9 @@ const SignupPage = ({ setIsAuthenticated }: SignupPageProps) => {
 
     try {
       const response = await axios.post("/api/auth/signup", { name, phone, password })
-      const userData = response.data
+      const userData = response.data.user || response.data
+
+      console.log("Signup successful, received user data:", userData)
 
       // Save user data
       localStorage.setItem("user", JSON.stringify(userData))
@@ -35,7 +37,8 @@ const SignupPage = ({ setIsAuthenticated }: SignupPageProps) => {
       setIsAuthenticated(true)
       navigate("/chat")
     } catch (err: any) {
-      setError(err.response?.data?.message || "An error occurred during signup")
+      console.error("Signup error:", err)
+      setError(err.response?.data?.error || "An error occurred during signup")
     } finally {
       setLoading(false)
     }

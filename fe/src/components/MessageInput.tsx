@@ -14,8 +14,16 @@ const MessageInput = ({ onSendMessage }: MessageInputProps) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (message.trim()) {
+      console.log("Sending message:", message)
       onSendMessage(message)
       setMessage("")
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit(e as unknown as React.FormEvent)
     }
   }
 
@@ -26,6 +34,7 @@ const MessageInput = ({ onSendMessage }: MessageInputProps) => {
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Type a message..."
           className="flex-1 border border-gray-300 rounded-l-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         />

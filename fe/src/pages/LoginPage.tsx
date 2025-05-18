@@ -28,13 +28,16 @@ const LoginPage = ({ setIsAuthenticated }: LoginPageProps) => {
       const response = await axios.post("/api/auth/login", { phone, password })
       const userData = response.data
 
-      // Save user data
+      console.log("Login successful, received user data:", userData)
+
+      // Save user data as is - backend returns the correct structure
       localStorage.setItem("user", JSON.stringify(userData))
       setUser(userData)
       setIsAuthenticated(true)
       navigate("/chat")
     } catch (err: any) {
-      setError(err.response?.data?.message || "Invalid phone or password")
+      console.error("Login error:", err)
+      setError(err.response?.data?.error || "Invalid phone or password")
     } finally {
       setLoading(false)
     }

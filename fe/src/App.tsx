@@ -15,7 +15,19 @@ function App() {
     // Check if user is logged in
     const user = localStorage.getItem("user")
     if (user) {
-      setIsAuthenticated(true)
+      try {
+        const userData = JSON.parse(user)
+        // Validate that the user data has the required fields
+        if (userData && userData.id && userData.name) {
+          setIsAuthenticated(true)
+        } else {
+          console.error("Invalid user data in localStorage:", userData)
+          localStorage.removeItem("user")
+        }
+      } catch (error) {
+        console.error("Error parsing user data:", error)
+        localStorage.removeItem("user")
+      }
     }
   }, [])
 

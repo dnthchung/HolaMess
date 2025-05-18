@@ -8,21 +8,7 @@ import { useSocket } from "../contexts/SocketContext"
 import UserList from "../components/UserList"
 import ChatWindow from "../components/ChatWindow"
 import MessageInput from "../components/MessageInput"
-
-interface User {
-  _id: string
-  name: string
-  phone: string
-}
-
-interface Message {
-  _id: string
-  sender: string
-  receiver: string
-  content: string
-  createdAt: string
-  read: boolean
-}
+import type { User, Message, RecentConversation } from "../types"
 
 const ChatPage = () => {
   const { user, setUser } = useUser()
@@ -31,18 +17,28 @@ const ChatPage = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
-  const [recentConversations, setRecentConversations] = useState<any[]>([])
+  const [recentConversations, setRecentConversations] = useState<RecentConversation[]>([])
   const navigate = useNavigate()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Fetch all users
   useEffect(() => {
     const fetchUsers = async () => {
+      if (!user) return
+
       try {
-        const response = await axios.get("/api/auth/users")
-        // Filter out current user
-        const filteredUsers = response.data.filter((u: User) => u._id !== user?._id)
-        setUsers(filteredUsers)
+        // Optionally exclude current user from results
+        const response = await axios.get(`/api/auth/users?exclude=${user.phone}`)
+        console.log("Fetched users:", response.data)
+
+        // Map the response to our User interface
+        const fetchedUsers = response.data.map((u: any) => ({
+          id: u._id || u.id,
+          name: u.name,
+          phone: u.phone,
+        }))
+
+        setUsers(fetchedUsers)
       } catch (error) {
         console.error("Error fetching users:", error)
       }
@@ -56,17 +52,20 @@ const ChatPage = () => {
   // Fetch recent conversations
   useEffect(() => {
     const fetchRecentConversations = async () => {
-      if (!user) return
+      if (!user || !user.id) return
 
       try {
-        const response = await axios.get(`/api/messages/recent/${user._id}`)
+        const response = await axios.get(`/api/messages/recent/${user.id}`)
+        console.log("Fetched recent conversations:", response.data)
         setRecentConversations(response.data)
       } catch (error) {
         console.error("Error fetching recent conversations:", error)
       }
     }
 
-    fetchRecentConversations()
+    if (user && user.id) {
+      fetchRecentConversations()
+    }
   }, [user])
 
   // Listen for incoming messages
@@ -74,12 +73,23 @@ const ChatPage = () => {
     if (!socket) return
 
     const handlePrivateMessage = (msg: Message) => {
+      console.log("Received private message:", msg)
+
+      // Add message to current conversation if relevant
       if (
-        (selectedUser && (msg.sender === selectedUser._id || msg.receiver === selectedUser._id)) ||
-        msg.sender === user?._id ||
-        msg.receiver === user?._id
+        (selectedUser && (msg.sender === selectedUser.id || msg.receiver === selectedUser.id)) ||
+        msg.sender === user?.id ||
+        msg.receiver === user?.id
       ) {
         setMessages((prevMessages) => [...prevMessages, msg])
+      }
+
+      // Refresh recent conversations to update the preview
+      if (user && user.id) {
+        axios
+          .get(`/api/messages/recent/${user.id}`)
+          .then((response) => setRecentConversations(response.data))
+          .catch((error) => console.error("Error refreshing conversations:", error))
       }
     }
 
@@ -93,15 +103,27 @@ const ChatPage = () => {
   // Fetch conversation when a user is selected
   useEffect(() => {
     const fetchConversation = async () => {
-      if (!user || !selectedUser) return
+      if (!user || !selectedUser || !user.id || !selectedUser.id) {
+        console.error("Cannot fetch conversation - missing user IDs:", {
+          userId: user?.id,
+          selectedUserId: selectedUser?.id,
+        })
+        return
+      }
 
       setLoading(true)
       try {
-        const response = await axios.get(`/api/messages/conversation/${user._id}/${selectedUser._id}`)
+        console.log("Fetching conversation between", user.id, "and", selectedUser.id)
+        const response = await axios.get(`/api/messages/conversation/${user.id}/${selectedUser.id}`)
+        console.log("Fetched conversation:", response.data)
         setMessages(response.data)
 
         // Mark messages as read
-        await axios.put(`/api/messages/mark-read/${user._id}/${selectedUser._id}`)
+        await axios.put(`/api/messages/mark-read/${user.id}/${selectedUser.id}`)
+
+        // Refresh recent conversations to update unread counts
+        const recentsResponse = await axios.get(`/api/messages/recent/${user.id}`)
+        setRecentConversations(recentsResponse.data)
       } catch (error) {
         console.error("Error fetching conversation:", error)
       } finally {
@@ -109,7 +131,7 @@ const ChatPage = () => {
       }
     }
 
-    if (selectedUser) {
+    if (selectedUser && selectedUser.id) {
       fetchConversation()
     }
   }, [selectedUser, user])
@@ -120,19 +142,55 @@ const ChatPage = () => {
   }, [messages])
 
   const handleUserSelect = (selectedUser: User) => {
+    console.log("User selected:", selectedUser)
+    if (!selectedUser || !selectedUser.id) {
+      console.error("Selected user has no ID:", selectedUser)
+      return
+    }
     setSelectedUser(selectedUser)
   }
 
   const handleSendMessage = (content: string) => {
-    if (!socket || !user || !selectedUser || !content.trim()) return
+    if (!socket || !user || !selectedUser || !content.trim() || !user.id || !selectedUser.id) {
+      console.error("Cannot send message:", {
+        socketExists: !!socket,
+        userExists: !!user,
+        userId: user?.id,
+        selectedUserExists: !!selectedUser,
+        selectedUserId: selectedUser?.id,
+        contentValid: !!content.trim(),
+      })
+      return
+    }
+
+    console.log("Preparing to send message:", {
+      sender: user.id,
+      receiver: selectedUser.id,
+      content: content.trim(),
+    })
 
     const messageData = {
-      sender: user._id,
-      receiver: selectedUser._id,
+      sender: user.id,
+      receiver: selectedUser.id,
       content: content.trim(),
     }
 
-    socket.emit("private_message", messageData)
+    // Add message to local state immediately for better UX
+    const tempMessage = {
+      _id: Date.now().toString(), // Temporary ID
+      sender: user.id,
+      receiver: selectedUser.id,
+      content: content.trim(),
+      createdAt: new Date().toISOString(),
+      read: false,
+    }
+
+    setMessages((prev) => [...prev, tempMessage])
+
+    // Emit the message
+    socket.emit("private_message", messageData, (acknowledgement: any) => {
+      console.log("Message acknowledgement:", acknowledgement)
+    })
   }
 
   const handleLogout = () => {
@@ -188,7 +246,7 @@ const ChatPage = () => {
             {/* Messages */}
             <ChatWindow
               messages={messages}
-              currentUserId={user?._id || ""}
+              currentUserId={user?.id || ""}
               loading={loading}
               messagesEndRef={messagesEndRef}
             />
