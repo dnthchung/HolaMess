@@ -74,7 +74,7 @@ const UserList = ({ users, selectedUser, onSelectUser, recentConversations }: Us
   const handleUserClick = (user: any) => {
     // Ensure the user has a valid ID before selecting
     if (user && user.id) {
-      console.log("Selected user:", user)
+      // console.log("Selected user:", user)
       onSelectUser(user)
     } else {
       console.error("Attempted to select user with invalid ID:", user)

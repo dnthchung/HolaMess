@@ -16,7 +16,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
       const savedUser = localStorage.getItem("user")
       if (savedUser) {
         const parsedUser = JSON.parse(savedUser)
-        console.log("Loaded user from localStorage:", parsedUser)
+        // console.log("Loaded user from localStorage:", parsedUser)
         return parsedUser
       }
       return null
