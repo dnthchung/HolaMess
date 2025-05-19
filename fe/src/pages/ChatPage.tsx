@@ -20,6 +20,7 @@ const ChatPage = () => {
   const [recentConversations, setRecentConversations] = useState<RecentConversation[]>([])
   const navigate = useNavigate()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [pendingMessages, setPendingMessages] = useState<Set<string>>(new Set())
 
   // Fetch all users
   useEffect(() => {
@@ -46,6 +47,11 @@ const ChatPage = () => {
 
     if (user) {
       fetchUsers()
+
+      // Set up interval to periodically refresh users list
+      const intervalId = setInterval(fetchUsers, 30000) // Every 30 seconds
+
+      return () => clearInterval(intervalId)
     }
   }, [user])
 
@@ -65,6 +71,11 @@ const ChatPage = () => {
 
     if (user && user.id) {
       fetchRecentConversations()
+
+      // Set up interval to periodically refresh conversations
+      const intervalId = setInterval(fetchRecentConversations, 15000) // Every 15 seconds
+
+      return () => clearInterval(intervalId)
     }
   }, [user])
 
@@ -74,6 +85,18 @@ const ChatPage = () => {
 
     const handlePrivateMessage = (msg: Message) => {
       console.log("Received private message:", msg)
+
+      // Check if this is a message we sent (to avoid duplicates)
+      if (pendingMessages.has(msg._id)) {
+        console.log("Skipping already displayed message:", msg._id)
+        // Remove from pending messages
+        setPendingMessages((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(msg._id)
+          return newSet
+        })
+        return
+      }
 
       // Add message to current conversation if relevant
       if (
@@ -98,7 +121,7 @@ const ChatPage = () => {
     return () => {
       socket.off("private_message", handlePrivateMessage)
     }
-  }, [socket, selectedUser, user])
+  }, [socket, selectedUser, user, pendingMessages])
 
   // Fetch conversation when a user is selected
   useEffect(() => {
@@ -175,9 +198,12 @@ const ChatPage = () => {
       content: content.trim(),
     }
 
+    // Generate a temporary ID for this message
+    const tempId = `temp-${Date.now()}`
+
     // Add message to local state immediately for better UX
     const tempMessage = {
-      _id: Date.now().toString(), // Temporary ID
+      _id: tempId,
       sender: user.id,
       receiver: selectedUser.id,
       content: content.trim(),
@@ -185,11 +211,27 @@ const ChatPage = () => {
       read: false,
     }
 
+    // Add to messages and to pending messages set
     setMessages((prev) => [...prev, tempMessage])
+    setPendingMessages((prev) => new Set(prev).add(tempId))
 
     // Emit the message
     socket.emit("private_message", messageData, (acknowledgement: any) => {
       console.log("Message acknowledgement:", acknowledgement)
+
+      // If we get an acknowledgement with the real message ID, we can update our pending messages
+      if (acknowledgement && acknowledgement._id) {
+        // Remove the temp ID and add the real ID to pending messages
+        setPendingMessages((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(tempId)
+          newSet.add(acknowledgement._id)
+          return newSet
+        })
+
+        // Update the message in our messages array
+        setMessages((prev) => prev.map((msg) => (msg._id === tempId ? { ...msg, _id: acknowledgement._id } : msg)))
+      }
     })
   }
 

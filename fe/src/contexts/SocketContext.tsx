@@ -28,7 +28,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
     // Connect to socket server - use the same URL as the API
     // Try with different transports and options to ensure connection
-    const newSocket = io("http://localhost:3001", {
+    const newSocket = io("http://localhost:3000", {
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 10,
