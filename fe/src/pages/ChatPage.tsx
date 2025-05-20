@@ -273,6 +273,155 @@ const ChatPage = () => {
     }
   }, [socket])
 
+  // Handle read receipts from other devices
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessagesRead = (data: { otherUserId: string }) => {
+      console.log("Messages read on another device:", data);
+     
+      // If the read messages are for the current conversation, update the UI
+      if (selectedUser && selectedUser.id === data.otherUserId) {
+        // Refresh the conversation to get updated read status
+        refreshConversation(user?.id || "", selectedUser.id);
+      } else {
+        // Otherwise, just refresh the recent conversations list to update unread counts
+        refreshRecentConversations();
+      }
+    };
+
+    // Handle receipts of messages read by the recipient
+    const handleReceiptRead = (data: { userId: string, otherUserId: string }) => {
+      console.log("Receipt read:", data);
+     
+      // If this receipt is for the current conversation, update the messages
+      if (user?.id === data.otherUserId && selectedUser?.id === data.userId) {
+        // Update all messages as read
+        setMessages(prevMessages =>
+          prevMessages.map(msg =>
+            msg.sender === user.id ? { ...msg, read: true } : msg
+          )
+        );
+      }
+    };
+
+    socket.on("messages_read", handleMessagesRead);
+    socket.on("receipt_read", handleReceiptRead);
+
+    return () => {
+      socket.off("messages_read", handleMessagesRead);
+      socket.off("receipt_read", handleReceiptRead);
+    };
+  }, [socket, selectedUser, user]);
+
+  // Function to refresh conversation data
+  const refreshConversation = async (userId: string, otherUserId: string) => {
+    if (!userId || !otherUserId) return;
+     
+    try {
+      console.log("Refreshing conversation between", userId, "and", otherUserId);
+      const response = await axios.get(`/api/messages/conversation/${userId}/${otherUserId}`);
+      setMessages(response.data);
+    } catch (error) {
+      console.error("Error refreshing conversation:", error);
+    }
+  };
+
+  // Function to refresh recent conversations
+  const refreshRecentConversations = async () => {
+    if (!user || !user.id) return;
+     
+    try {
+      const response = await axios.get(`/api/messages/recent/${user.id}`);
+      setRecentConversations(response.data);
+    } catch (error) {
+      console.error("Error refreshing recent conversations:", error);
+    }
+  };
+
+  // Handle input focus (mark messages as read)
+  const handleInputFocus = async () => {
+    if (!user || !selectedUser || !user.id || !selectedUser.id) return;
+     
+    try {
+      // Call API to mark messages as read
+      await axios.put(`/api/messages/mark-read-focus/${user.id}/${selectedUser.id}`);
+     
+      // Update messages locally
+      setMessages(prevMessages =>
+        prevMessages.map(msg =>
+          msg.receiver === user.id ? { ...msg, read: true } : msg
+        )
+      );
+     
+      // Update recent conversations to reflect read status
+      refreshRecentConversations();
+     
+      // Notify via socket
+      if (socket) {
+        socket.emit("mark_read", { userId: user.id, otherUserId: selectedUser.id });
+      }
+    } catch (error) {
+      console.error("Error marking messages as read on focus:", error);
+    }
+  };
+
+  // Function to format user's activity status
+  const formatUserStatus = (userId: string) => {
+    // Check if the user is in the online users set
+    const isOnline = onlineUsers.has(userId);
+
+    if (isOnline) {
+      return (
+        <span className="text-green-500 flex items-center">
+          <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+          Online
+        </span>
+      );
+    }
+
+    // Find the user in the conversation list to get last activity time
+    const conversation = recentConversations.find(conv => conv._id === userId);
+    if (conversation && conversation.lastMessage?.createdAt) {
+      const lastActiveTime = new Date(conversation.lastMessage.createdAt);
+      const now = new Date();
+      const diffMs = now.getTime() - lastActiveTime.getTime();
+
+      // Within 1 hour
+      if (diffMs < 60 * 60 * 1000) {
+        const minutes = Math.floor(diffMs / (60 * 1000));
+        return (
+          <span className="text-gray-500 text-sm">
+            Active {minutes} min ago
+          </span>
+        );
+      }
+
+      // Within 24 hours
+      if (diffMs < 24 * 60 * 60 * 1000) {
+        const hours = Math.floor(diffMs / (60 * 60 * 1000));
+        return (
+          <span className="text-gray-500 text-sm">
+            Active {hours}h ago
+          </span>
+        );
+      }
+
+      // More than a day
+      return (
+        <span className="text-gray-500 text-sm">
+          Last seen {lastActiveTime.toLocaleDateString()}
+        </span>
+      );
+    }
+
+    return (
+      <span className="text-gray-500 text-sm">
+        Offline
+      </span>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-gray-100">
       <div className="w-1/4 bg-white border-r border-gray-200">
@@ -297,21 +446,14 @@ const ChatPage = () => {
           <>
             <div className="p-4 border-b border-gray-200 flex items-center">
               <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-800 font-semibold mr-3">
-                {selectedUser.name.charAt(0).toUpperCase()}
+                {selectedUser?.name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <div className="font-semibold">{selectedUser.name}</div>
-                <div className="text-sm text-gray-500">{selectedUser.phone}</div>
+                <div className="font-semibold">{selectedUser?.name}</div>
+                <div className="text-sm text-gray-500">{selectedUser?.phone}</div>
               </div>
               <div className="ml-auto text-sm">
-                {isConnected ? (
-                  <span className="text-green-500 flex items-center">
-                    <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-                    Connected
-                  </span>
-                ) : (
-                  <span className="text-gray-500">Disconnected</span>
-                )}
+                {selectedUser && formatUserStatus(selectedUser.id)}
               </div>
             </div>
 
@@ -322,7 +464,7 @@ const ChatPage = () => {
               messagesEndRef={messagesEndRef}
             />
 
-            <MessageInput onSendMessage={handleSendMessage} />
+            <MessageInput onSendMessage={handleSendMessage} onFocus={handleInputFocus} />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50">

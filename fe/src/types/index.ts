@@ -4,6 +4,7 @@ export interface User {
     id: string // API returns as id
     name: string
     phone: string
+    token?: string // JWT token for authentication
   }
 
   export interface Message {

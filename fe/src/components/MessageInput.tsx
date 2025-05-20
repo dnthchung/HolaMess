@@ -6,9 +6,10 @@ import { useState } from "react"
 
 interface MessageInputProps {
   onSendMessage: (content: string) => void
+  onFocus?: () => void
 }
 
-const MessageInput = ({ onSendMessage }: MessageInputProps) => {
+const MessageInput = ({ onSendMessage, onFocus }: MessageInputProps) => {
   const [message, setMessage] = useState("")
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -27,6 +28,12 @@ const MessageInput = ({ onSendMessage }: MessageInputProps) => {
     }
   }
 
+  const handleFocus = () => {
+    if (onFocus) {
+      onFocus()
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4 bg-white">
       <div className="flex items-center">
@@ -35,6 +42,7 @@ const MessageInput = ({ onSendMessage }: MessageInputProps) => {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
           placeholder="Type a message..."
           className="flex-1 border border-gray-300 rounded-l-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         />

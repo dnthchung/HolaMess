@@ -46,7 +46,11 @@ const io = new SocketIOServer(server, {
 });
 
 // Set up socket handlers
-setupSocketHandlers(io);
+const socketHandlers = setupSocketHandlers(io);
+
+// Share socket.io instance with message controller for cross-device sync
+import { setSocketInstance } from "./controllers/message.controller";
+setSocketInstance(io);
 
 // MongoDB connection with retry logic
 const connectDB = async () => {

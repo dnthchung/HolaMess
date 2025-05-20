@@ -2,9 +2,20 @@ import { Request, Response, RequestHandler } from "express"; // Import RequestHa
 import Message from "../models/Message";
 import mongoose from "mongoose";
 import { logger } from '../utils/logger'; // Import logger
+import { AuthRequest } from "../utils/authMiddleware";
+import Session from "../models/Session";
+import { Server } from "socket.io";
+
+// Global socket io instance reference, will be set from server.ts
+let io: Server;
+
+// Initialize the socket reference
+export const setSocketInstance = (socketIo: Server) => {
+  io = socketIo;
+};
 
 // Get conversation between two users - Áp dụng RequestHandler và xử lý req.params + Logger
-export const getConversation: RequestHandler = async (req, res) => {
+export const getConversation: RequestHandler = async (req: AuthRequest, res) => {
   try {
     // Thêm as string để làm rõ kiểu dữ liệu từ params
     const { userId, otherUserId } = req.params as { userId: string, otherUserId: string };
@@ -38,7 +49,7 @@ export const getConversation: RequestHandler = async (req, res) => {
 };
 
 // Mark messages as read - Áp dụng RequestHandler và xử lý req.params + Logger
-export const markAsRead: RequestHandler = async (req, res) => {
+export const markAsRead: RequestHandler = async (req: AuthRequest, res) => {
   try {
     // Thêm as string để làm rõ kiểu dữ liệu từ params
     const { userId, otherUserId } = req.params as { userId: string, otherUserId: string };
@@ -56,8 +67,13 @@ export const markAsRead: RequestHandler = async (req, res) => {
       }
     );
 
+    // Notify other devices of the same user about read status change
+    if (result.modifiedCount > 0) {
+      notifyUserSessions(userId, 'messages_read', { otherUserId });
+    }
+
     logger.info('Successfully marked messages as read', { fromUser: otherUserId, toUser: userId, updatedCount: result.modifiedCount }); // Log thông tin thành công
-    res.json({ success: true });
+    res.json({ success: true, updatedCount: result.modifiedCount });
   } catch (error) {
     // Log lỗi server với logger.error
     logger.error("Error marking messages as read", error, { userId: req.params.userId, otherUserId: req.params.otherUserId });
@@ -65,8 +81,47 @@ export const markAsRead: RequestHandler = async (req, res) => {
   }
 };
 
+// Mark messages as read when focusing on input
+export const markAsReadOnFocus: RequestHandler = async (req: AuthRequest, res) => {
+  try {
+    const { userId, otherUserId } = req.params as { userId: string, otherUserId: string };
+    logger.info('Attempting to mark messages as read on focus', { fromUser: otherUserId, toUser: userId });
+
+    // Update all unread messages
+    const result = await Message.updateMany(
+      {
+        sender: otherUserId,
+        receiver: userId,
+        read: false,
+      },
+      {
+        $set: { read: true },
+      }
+    );
+
+    // Notify other devices of the same user about read status change
+    if (result.modifiedCount > 0) {
+      notifyUserSessions(userId, 'messages_read', { otherUserId });
+    }
+
+    logger.info('Successfully marked messages as read on focus', {
+      fromUser: otherUserId,
+      toUser: userId,
+      updatedCount: result.modifiedCount
+    });
+
+    res.json({ success: true, updatedCount: result.modifiedCount });
+  } catch (error) {
+    logger.error("Error marking messages as read on focus", error, {
+      userId: req.params.userId,
+      otherUserId: req.params.otherUserId
+    });
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 // Get user's recent conversations - Áp dụng RequestHandler và xử lý req.params + Logger
-export const getRecentConversations: RequestHandler = async (req, res) => {
+export const getRecentConversations: RequestHandler = async (req: AuthRequest, res) => {
   try {
     // Thêm as string để làm rõ kiểu dữ liệu từ params
     const { userId } = req.params as { userId: string };
@@ -134,3 +189,35 @@ export const getRecentConversations: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+
+// Helper function to notify other sessions of the same user
+async function notifyUserSessions(userId: string, eventName: string, data: any) {
+  if (!io) {
+    logger.warn('Socket.io instance not available for notification');
+    return;
+  }
+
+  try {
+    // Get all active sessions for this user
+    const sessions = await Session.find({ userId });
+
+    // Get the socket IDs associated with these sessions from the socket connections
+    const socketIds = Object.entries(io.sockets.sockets)
+      .filter(([_, socket]) => {
+        const userIdFromSocket = (socket as any).userId;
+        return userIdFromSocket === userId;
+      })
+      .map(([socketId]) => socketId);
+
+    if (socketIds.length > 0) {
+      logger.info('Notifying user sessions', { userId, eventName, socketIds });
+
+      // Emit the event to all connected sockets for this user
+      socketIds.forEach(socketId => {
+        io.to(socketId).emit(eventName, data);
+      });
+    }
+  } catch (error) {
+    logger.error('Error notifying user sessions', error, { userId, eventName });
+  }
+}

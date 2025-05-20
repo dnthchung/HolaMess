@@ -10,6 +10,14 @@ interface SocketContextType {
   lastActiveTime: Date | null
   status: 'online' | 'offline'
   disconnectSocket: () => void
+  otherDevices: DeviceInfo[]
+}
+
+interface DeviceInfo {
+  id: string
+  deviceInfo: string
+  lastActive: Date
+  isCurrentDevice: boolean
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined)
@@ -19,6 +27,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [isConnected, setIsConnected] = useState(false)
   const [lastActiveTime, setLastActiveTime] = useState<Date | null>(null)
   const [status, setStatus] = useState<'online' | 'offline'>('offline')
+  const [otherDevices, setOtherDevices] = useState<DeviceInfo[]>([])
   const { user } = useUser()
 
   const disconnectSocket = () => {
@@ -28,6 +37,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       setSocket(null)
       setIsConnected(false)
       setStatus('offline')
+      setOtherDevices([])
     }
   }
 
@@ -38,7 +48,6 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Connect to socket server - use the same URL as the API
-    // Try with different transports and options to ensure connection
     const newSocket = io("http://localhost:3000", {
       transports: ["websocket", "polling"],
       reconnection: true,
@@ -51,13 +60,29 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
     newSocket.on("connect", () => {
       console.log("Socket connected with ID:", newSocket.id)
-      setIsConnected(true)
-      setStatus('online')
-      setLastActiveTime(new Date())
 
-      // Join with user ID as per API docs
-      newSocket.emit("join", user.id)
-      console.log("Emitted join event with user ID:", user.id)
+      // Authenticate with token once connected
+      if (user && user.token) {
+        newSocket.emit('authenticate', user.token, (response: { success: boolean, error?: string }) => {
+          if (response.success) {
+            console.log('Socket authenticated successfully');
+            setIsConnected(true)
+            setStatus('online')
+            setLastActiveTime(new Date())
+          } else {
+            console.error('Socket authentication failed:', response.error);
+            setIsConnected(false)
+            setStatus('offline')
+          }
+        });
+      } else {
+        // Legacy support - join with user ID if no token
+        console.log("No token available, using legacy join method");
+        newSocket.emit("join", user.id)
+        setIsConnected(true)
+        setStatus('online')
+        setLastActiveTime(new Date())
+      }
     })
 
     newSocket.on("disconnect", () => {
@@ -74,6 +99,31 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     // Listen for error messages from server
     newSocket.on("error_message", (error) => {
       console.error("Server error:", error)
+    })
+
+    // Handle device connected notification
+    newSocket.on("device_connected", (data) => {
+      console.log("Another device connected:", data)
+      // Update other devices list if needed
+      setOtherDevices(prev => [...prev, {
+        id: data.socketId,
+        deviceInfo: data.deviceInfo,
+        lastActive: new Date(),
+        isCurrentDevice: false
+      }])
+    })
+
+    // Handle device disconnected notification
+    newSocket.on("device_disconnected", (data) => {
+      console.log("Another device disconnected:", data)
+      // Update other devices list
+      setOtherDevices(prev => prev.filter(device => device.id !== data.socketId))
+    })
+
+    // Listen for messages read by other devices
+    newSocket.on("messages_read", (data) => {
+      console.log("Messages read on another device:", data)
+      // We'll handle this in the chat page to update UI
     })
 
     // Update last active time periodically when connected
@@ -96,7 +146,8 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       isConnected,
       lastActiveTime,
       status,
-      disconnectSocket
+      disconnectSocket,
+      otherDevices
     }}>
       {children}
     </SocketContext.Provider>

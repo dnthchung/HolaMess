@@ -14,6 +14,18 @@ const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWi
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   }
 
+  const getReadStatus = (message: Message) => {
+    if (message.sender !== currentUserId) {
+      return null;
+    }
+
+    return message.read ? (
+      <span className="text-green-500">✓✓</span>
+    ) : (
+      <span className="text-gray-400">✓</span>
+    );
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
       {loading ? (
@@ -42,9 +54,9 @@ const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWi
                     }`}
                   >
                     <div>{message.content}</div>
-                    <div className={`text-xs mt-1 ${isSentByMe ? "text-indigo-200" : "text-gray-500"}`}>
-                      {formatTime(message.createdAt)}
-                      {isSentByMe && <span className="ml-2">{message.read ? "✓✓" : "✓"}</span>}
+                    <div className={`text-xs mt-1 flex justify-between ${isSentByMe ? "text-indigo-200" : "text-gray-500"}`}>
+                      <span>{formatTime(message.createdAt)}</span>
+                      {getReadStatus(message)}
                     </div>
                   </div>
                 </div>
