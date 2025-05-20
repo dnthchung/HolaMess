@@ -12,12 +12,13 @@ import type { User, Message, RecentConversation } from "../types"
 
 const ChatPage = () => {
   const { user, setUser } = useUser()
-  const { socket, isConnected } = useSocket()
+  const { socket, isConnected, disconnectSocket } = useSocket()
   const [users, setUsers] = useState<User[]>([])
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
   const [recentConversations, setRecentConversations] = useState<RecentConversation[]>([])
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set())
   const navigate = useNavigate()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [pendingMessages, setPendingMessages] = useState<Set<string>>(new Set())
@@ -79,6 +80,9 @@ const ChatPage = () => {
     const handlePrivateMessage = (msg: Message) => {
       console.log("Received private message:", msg)
 
+      // Check if message already exists in messages array
+      const messageExists = messages.some(existingMsg => existingMsg._id === msg._id)
+     
       if (pendingMessages.has(msg._id)) {
         console.log("Skipping already displayed message:", msg._id)
         setPendingMessages((prev) => {
@@ -86,6 +90,12 @@ const ChatPage = () => {
           newSet.delete(msg._id)
           return newSet
         })
+        return
+      }
+
+      // Prevent adding duplicate messages
+      if (messageExists) {
+        console.log("Skipping duplicate message:", msg._id)
         return
       }
 
@@ -110,7 +120,7 @@ const ChatPage = () => {
     return () => {
       socket.off("private_message", handlePrivateMessage)
     }
-  }, [socket, selectedUser, user, pendingMessages])
+  }, [socket, selectedUser, user, pendingMessages, messages])
 
   useEffect(() => {
     const fetchConversation = async () => {
@@ -214,10 +224,54 @@ const ChatPage = () => {
   }
 
   const handleLogout = () => {
+    // Disconnect socket first
+    disconnectSocket()
+     
+    // Clear user data from storage
     localStorage.removeItem("user")
+    sessionStorage.clear()
+     
+    // Update user context
     setUser(null)
+     
+    // Redirect to login page
     navigate("/login")
   }
+
+  useEffect(() => {
+    if (!socket) return
+
+    // Listen for user online status
+    const handleUserOnline = (userId: string) => {
+      setOnlineUsers(prev => {
+        const newSet = new Set(prev)
+        newSet.add(userId)
+        return newSet
+      })
+    }
+
+    // Listen for user offline status
+    const handleUserOffline = (userId: string) => {
+      setOnlineUsers(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(userId)
+        return newSet
+      })
+    }
+
+    // Get initial online users
+    socket.emit('get_online_users', (onlineUserIds: string[]) => {
+      setOnlineUsers(new Set(onlineUserIds))
+    })
+
+    socket.on('user_online', handleUserOnline)
+    socket.on('user_offline', handleUserOffline)
+
+    return () => {
+      socket.off('user_online', handleUserOnline)
+      socket.off('user_offline', handleUserOffline)
+    }
+  }, [socket])
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -234,6 +288,7 @@ const ChatPage = () => {
           selectedUser={selectedUser}
           onSelectUser={handleUserSelect}
           recentConversations={recentConversations}
+          onlineUsers={onlineUsers}
         />
       </div>
 

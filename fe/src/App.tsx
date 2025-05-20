@@ -1,59 +1,91 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import SignupPage from "./pages/SignupPage"
 import LoginPage from "./pages/LoginPage"
 import ChatPage from "./pages/ChatPage"
-import { UserProvider } from "./contexts/UserContext"
+import { UserProvider, useUser } from "./contexts/UserContext"
 import { SocketProvider } from "./contexts/SocketContext"
 
-function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
+// AuthenticatedRoute component to protect routes
+const AuthenticatedRoute = ({ children }: { children: JSX.Element }) => {
+  const { user } = useUser();
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+};
+
+// UnauthenticatedRoute component for login/signup routes
+const UnauthenticatedRoute = ({ children }: { children: JSX.Element }) => {
+  const { user } = useUser();
+  if (user) return <Navigate to="/chat" replace />;
+  return children;
+};
+
+// AppRoutes component to contain routes, using user context
+const AppRoutes = () => {
+  const { user, setUser } = useUser();
 
   useEffect(() => {
-    // Check if user is logged in
-    const user = localStorage.getItem("user")
-    if (user) {
+    // Check if user is logged in on app start
+    const storedUser = localStorage.getItem("user");
+    if (storedUser && !user) {
       try {
-        const userData = JSON.parse(user)
+        const userData = JSON.parse(storedUser);
         // Validate that the user data has the required fields
         if (userData && userData.id && userData.name) {
-          setIsAuthenticated(true)
+          setUser(userData);
         } else {
-          console.error("Invalid user data in localStorage:", userData)
-          localStorage.removeItem("user")
+          console.error("Invalid user data in localStorage:", userData);
+          localStorage.removeItem("user");
         }
       } catch (error) {
-        console.error("Error parsing user data:", error)
-        localStorage.removeItem("user")
+        console.error("Error parsing user data:", error);
+        localStorage.removeItem("user");
       }
     }
-  }, [])
+  }, [user, setUser]);
 
+  return (
+    <Router>
+      <div className="min-h-screen bg-gray-100">
+        <Routes>
+          <Route
+            path="/signup"
+            element={
+              <UnauthenticatedRoute>
+                <SignupPage />
+              </UnauthenticatedRoute>
+            }
+          />
+          <Route
+            path="/login"
+            element={
+              <UnauthenticatedRoute>
+                <LoginPage />
+              </UnauthenticatedRoute>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <AuthenticatedRoute>
+                <ChatPage />
+              </AuthenticatedRoute>
+            }
+          />
+          <Route path="/" element={<Navigate to={user ? "/chat" : "/login"} />} />
+        </Routes>
+      </div>
+    </Router>
+  );
+};
+
+function App() {
   return (
     <UserProvider>
       <SocketProvider>
-        <Router>
-          <div className="min-h-screen bg-gray-100">
-            <Routes>
-              <Route
-                path="/signup"
-                element={
-                  !isAuthenticated ? <SignupPage setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/chat" />
-                }
-              />
-              <Route
-                path="/login"
-                element={
-                  !isAuthenticated ? <LoginPage setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/chat" />
-                }
-              />
-              <Route path="/chat" element={isAuthenticated ? <ChatPage /> : <Navigate to="/login" />} />
-              <Route path="/" element={<Navigate to={isAuthenticated ? "/chat" : "/login"} />} />
-            </Routes>
-          </div>
-        </Router>
+        <AppRoutes />
       </SocketProvider>
     </UserProvider>
   )

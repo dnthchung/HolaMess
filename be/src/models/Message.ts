@@ -5,6 +5,7 @@ export interface IMessage extends Document {
   sender: mongoose.Types.ObjectId | string;
   receiver: mongoose.Types.ObjectId | string;
   content: string;
+  clientMessageId: string;
   read: boolean;
   createdAt: Date;
   updatedAt: Date;

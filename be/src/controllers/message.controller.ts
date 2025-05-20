@@ -91,6 +91,18 @@ export const getRecentConversations: RequestHandler = async (req, res) => {
             },
           },
           lastMessage: { $first: "$$ROOT" },
+          unreadCount: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $eq: ["$receiver", new mongoose.Types.ObjectId(userId)] },
+                  { $eq: ["$read", false] }
+                ]},
+                1,
+                0
+              ]
+            }
+          }
         },
       },
       {
@@ -106,6 +118,7 @@ export const getRecentConversations: RequestHandler = async (req, res) => {
         $project: {
           _id: 1,
           lastMessage: 1,
+          unreadCount: 1,
           "userInfo.name": 1,
           "userInfo.phone": 1,
         },

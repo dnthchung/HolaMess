@@ -5,7 +5,7 @@ export interface User {
     name: string
     phone: string
   }
-  
+
   export interface Message {
     _id: string
     sender: string // userId
@@ -14,7 +14,7 @@ export interface User {
     read: boolean
     createdAt: string // ISO
   }
-  
+
   export interface RecentConversation {
     _id: string // partner id
     userInfo: {
@@ -29,5 +29,5 @@ export interface User {
       createdAt: string
       read: boolean
     }
+    unreadCount: number
   }
-  

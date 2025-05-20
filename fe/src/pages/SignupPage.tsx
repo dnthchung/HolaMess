@@ -7,11 +7,7 @@ import { Link, useNavigate } from "react-router-dom"
 import axios from "axios"
 import { useUser } from "../contexts/UserContext"
 
-interface SignupPageProps {
-  setIsAuthenticated: (value: boolean) => void
-}
-
-const SignupPage = ({ setIsAuthenticated }: SignupPageProps) => {
+const SignupPage = () => {
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
@@ -34,7 +30,6 @@ const SignupPage = ({ setIsAuthenticated }: SignupPageProps) => {
       // Save user data
       localStorage.setItem("user", JSON.stringify(userData))
       setUser(userData)
-      setIsAuthenticated(true)
       navigate("/chat")
     } catch (err: any) {
       console.error("Signup error:", err)

@@ -7,11 +7,7 @@ import { Link, useNavigate } from "react-router-dom"
 import axios from "axios"
 import { useUser } from "../contexts/UserContext"
 
-interface LoginPageProps {
-  setIsAuthenticated: (value: boolean) => void
-}
-
-const LoginPage = ({ setIsAuthenticated }: LoginPageProps) => {
+const LoginPage = () => {
   const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -33,7 +29,6 @@ const LoginPage = ({ setIsAuthenticated }: LoginPageProps) => {
       // Save user data as is - backend returns the correct structure
       localStorage.setItem("user", JSON.stringify(userData))
       setUser(userData)
-      setIsAuthenticated(true)
       navigate("/chat")
     } catch (err: any) {
       console.error("Login error:", err)
