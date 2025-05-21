@@ -92,30 +92,39 @@ export const saveRefreshToken = async (
   }
 };
 
-// Verify refresh token
-export const verifyRefreshToken = async (token: string): Promise<TokenPayload | null> => {
+// Verify token - handles both refresh and access tokens
+export const verifyAnyToken = async (token: string): Promise<TokenPayload | null> => {
   try {
-    // First verify the token signature
-    // @ts-ignore
-    const decoded = jwt.verify(
-      token,
-      config.REFRESH_TOKEN_SECRET
-    ) as TokenPayload;
+    // First try as a refresh token
+    try {
+      const decoded = jwt.verify(token, config.REFRESH_TOKEN_SECRET) as TokenPayload;
 
-    // Check if token exists in database and is not revoked
-    const tokenDoc = await RefreshToken.findOne({
-      token,
-      isRevoked: false,
-    });
+      // Check if token exists in database and is not revoked
+      const tokenDoc = await RefreshToken.findOne({
+        token,
+        isRevoked: false,
+      });
 
-    if (!tokenDoc) {
-      logger.warn('Refresh token not found or revoked', { tokenId: decoded.id });
-      return null;
+      if (!tokenDoc) {
+        logger.debug('Token not found as refresh token, trying as access token');
+      } else {
+        return decoded;
+      }
+    } catch (refreshError) {
+      logger.debug('Not a valid refresh token, trying as access token');
     }
 
-    return decoded;
+    // Try as an access token
+    try {
+      const decoded = jwt.verify(token, config.JWT_SECRET) as TokenPayload;
+      logger.debug('Successfully verified as access token');
+      return decoded;
+    } catch (accessError) {
+      logger.debug('Not a valid access token either');
+      return null;
+    }
   } catch (error) {
-    logger.error('Refresh token verification failed', error);
+    logger.error('Token verification failed', error);
     return null;
   }
 };
@@ -301,7 +310,8 @@ export const authenticateRefreshToken = async (req: AuthRequest, res: Response, 
       service: 'hola-mess-api',
       cookies: req.cookies,
       signedCookies: req.signedCookies,
-      hasAuthCookie: !!req.cookies[config.REFRESH_TOKEN_COOKIE_NAME]
+      hasAuthCookie: !!req.cookies[config.REFRESH_TOKEN_COOKIE_NAME],
+      requestBody: req.body
     });
 
     logger.debug('Request details:', {
@@ -318,71 +328,76 @@ export const authenticateRefreshToken = async (req: AuthRequest, res: Response, 
       ip: req.ip
     });
 
-    // Extract refresh token from multiple sources with priority:
+    // Extract token from multiple sources with priority:
     // 1. Cookie
-    // 2. Authorization header (Bearer token)
-    // 3. Request body
+    // 2. Request body
+    // 3. Authorization header (Bearer token)
 
-    let refreshToken: string | null = null;
+    let token: string | null = null;
+    let tokenSource = 'none';
 
     // Check in cookie first
     if (req.cookies && req.cookies[config.REFRESH_TOKEN_COOKIE_NAME]) {
-      refreshToken = req.cookies[config.REFRESH_TOKEN_COOKIE_NAME];
-      logger.debug('Refresh token found in cookie');
+      token = req.cookies[config.REFRESH_TOKEN_COOKIE_NAME];
+      tokenSource = 'cookie';
+      logger.debug('Token found in cookie');
     }
 
-    // If not in cookie, check authorization header
-    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      refreshToken = req.headers.authorization.split(' ')[1];
-      logger.debug('Refresh token found in authorization header');
-    }
-
-    // Last resort, check request body
+    // If not in cookie, check request body
     else if (req.body && req.body.refreshToken) {
-      refreshToken = req.body.refreshToken;
-      logger.debug('Refresh token found in request body');
+      token = req.body.refreshToken;
+      tokenSource = 'body';
+      logger.debug('Token found in request body');
     }
 
-    if (!refreshToken) {
-      logger.warn('Refresh token authentication failed - No token provided');
-      res.status(401).json({ error: 'Unauthorized - No refresh token provided' });
+    // Last resort, check authorization header
+    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+      tokenSource = 'header';
+      logger.debug('Token found in authorization header');
+    }
+
+    if (!token) {
+      logger.warn('Token authentication failed - No token provided');
+      res.status(401).json({ error: 'Unauthorized - No token provided' });
       return;
     }
 
     // Log token details for debugging
-    logger.debug('Processing refresh token request', {
-      tokenLength: refreshToken.length,
-      tokenPrefix: refreshToken.substring(0, 10) + '...',
+    logger.debug('Processing token request', {
+      tokenSource,
+      tokenLength: token.length,
+      tokenPrefix: token.substring(0, 10) + '...',
       hasCookie: !!req.cookies[config.REFRESH_TOKEN_COOKIE_NAME],
       hasAuthHeader: !!(req.headers.authorization && req.headers.authorization.startsWith('Bearer ')),
       hasBodyToken: !!req.body.refreshToken
     });
 
-    // Verify refresh token
-    const decoded = await verifyRefreshToken(refreshToken);
+    // Verify token - can be either refresh or access token
+    const decoded = await verifyAnyToken(token);
 
     if (!decoded) {
-      logger.warn('Refresh token authentication failed - Invalid token');
-      res.status(403).json({ error: 'Forbidden - Invalid refresh token' });
+      logger.warn('Token authentication failed - Invalid token');
+      res.status(403).json({ error: 'Forbidden - Invalid token' });
       return;
     }
 
     // Find the user
     const user = await User.findById(decoded.id).select('-password');
     if (!user) {
-      logger.warn('Refresh token authentication failed - User not found', { userId: decoded.id });
+      logger.warn('Token authentication failed - User not found', { userId: decoded.id });
       res.status(403).json({ error: 'Forbidden - User not found' });
       return;
     }
 
-    // Set the user and refresh token in the request object
+    // Set the user and token in the request object
     req.user = user;
-    req.refreshToken = refreshToken;
+    req.refreshToken = token;
 
-    logger.debug('Refresh token authenticated successfully', { userId: user._id });
+    logger.debug('Token authenticated successfully', { userId: user._id });
     next();
   } catch (error) {
-    logger.error('Refresh token middleware error', error);
-    res.status(500).json({ error: 'Internal server error during refresh token authentication' });
+    logger.error('Token middleware error', error);
+    res.status(500).json({ error: 'Internal server error during token authentication' });
   }
 };

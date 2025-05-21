@@ -16,9 +16,7 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'X-Requested-With': 'XMLHttpRequest'
-  },
-  xsrfCookieName: 'XSRF-TOKEN',
-  xsrfHeaderName: 'X-XSRF-TOKEN'
+  }
 });
 
 // Flag to track if a token refresh is already in progress
@@ -63,11 +61,9 @@ const refreshToken = async (): Promise<string> => {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest' // Some servers check this for CORS
-        },
-        // Explicitly disable credentials to ensure cookies are sent
-        xsrfCookieName: 'XSRF-TOKEN',
-        xsrfHeaderName: 'X-XSRF-TOKEN',
+          'X-Requested-With': 'XMLHttpRequest', // Some servers check this for CORS
+          'Authorization': undefined // Explicitly remove Authorization header
+        }
       }
     );
 
@@ -105,6 +101,15 @@ const refreshToken = async (): Promise<string> => {
 apiClient.interceptors.request.use(
   (config) => {
     const token = tokenService.getToken();
+
+    // Don't add Authorization header for refresh token endpoint
+    if (config.url?.includes('refresh-token')) {
+      // Ensure there's no Authorization header for refresh token requests
+      if (config.headers) {
+        delete config.headers.Authorization;
+      }
+      return config;
+    }
 
     if (token) {
       config.headers = config.headers || {};
@@ -181,9 +186,28 @@ export const apiService = {
     }),
 
     refreshToken: () => {
-      // Only use cookie-based authentication
+      // Only use cookie-based authentication - explicitly remove any Authorization header
       return apiClient.post('/auth/refresh-token', {}, {
-        withCredentials: true
+        withCredentials: true,
+        headers: {
+          // Override the default headers to ensure no Authorization header is sent
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': undefined
+        }
+      });
+    },
+
+    refreshTokenFallback: (token: string) => {
+      // Fallback method that sends the current access token in the request body
+      // The backend will validate this and use it to identify the user
+      return apiClient.post('/auth/refresh-token', {
+        refreshToken: token // Using access token as a fallback identification method
+      }, {
+        withCredentials: true,
+        headers: {
+          'Authorization': undefined // Ensure no Bearer token is sent in header
+        }
       });
     },
 

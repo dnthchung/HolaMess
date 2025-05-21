@@ -13,6 +13,10 @@ const config = {
   REFRESH_TOKEN_COOKIE_MAXAGE: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
   REFRESH_TOKEN_COOKIE_NAME: "refreshToken",
   COOKIE_SECRET: process.env.COOKIE_SECRET || "your_cookie_secret_key",
+  // Cookie security settings
+  COOKIE_SECURE: false, // Set to false for development to work with http
+  COOKIE_SAME_SITE: 'none' as 'lax' | 'strict' | 'none', // Use none for cross-origin requests
+  COOKIE_DOMAIN: undefined, // Let browser set automatically based on current domain
 };
 
 export default config;

@@ -76,7 +76,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         expiresIn: userData.expiresIn
       })
 
-      console.log("Login successful")
+      console.log("Login successful - refresh token should be stored in cookies")
     } catch (err: any) {
       console.error("Login error:", err)
       setError(err.response?.data?.error || 'Login failed')
@@ -149,7 +149,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
       console.log("Manually refreshing token...");
 
       try {
-        // Try direct API call to get more detailed error info
+        // First try with normal cookie-based authentication
         const response = await apiService.auth.refreshToken();
         const { token, expiresIn } = response.data;
 
@@ -162,13 +162,36 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
           expiresIn
         });
       } catch (apiError: any) {
-        // Log detailed error info
-        console.error("Token refresh API error:", {
+        // If cookie-based fails, try with token in body as fallback
+        console.warn("Cookie-based refresh failed, trying fallback with token in body", {
           status: apiError.response?.status,
-          data: apiError.response?.data,
-          message: apiError.message
+          data: apiError.response?.data
         });
-        throw apiError;
+
+        try {
+          // Send the access token in the body as a fallback
+          if (!user.token) {
+            throw new Error("No token available for fallback refresh");
+          }
+          const fallbackResponse = await apiService.auth.refreshTokenFallback(user.token);
+          const { token, expiresIn } = fallbackResponse.data;
+
+          console.log("✅ Fallback token refresh successful", { expiresIn });
+
+          // Update user with new token
+          setUser({
+            ...user,
+            token,
+            expiresIn
+          });
+        } catch (fallbackError: any) {
+          // Both methods failed
+          console.error("Both refresh methods failed:", {
+            cookieError: apiError?.message,
+            fallbackError: fallbackError?.message
+          });
+          throw fallbackError;
+        }
       }
     } catch (err) {
       console.error("Token refresh failed, logging out user");

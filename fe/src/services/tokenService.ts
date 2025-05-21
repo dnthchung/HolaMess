@@ -67,15 +67,21 @@ export const tokenService = {
   // Initialize token from storage (for page reloads)
   initializeFromStorage: (): void => {
     try {
+      console.log('Initializing token from storage...');
       const savedUser = localStorage.getItem("user");
       if (savedUser) {
         const userData = JSON.parse(savedUser);
         if (userData.token) {
+          console.log('Found token in storage, setting access token');
           // Don't initialize expiration time from storage
           // to force a refresh on page reload for safety
           accessToken = userData.token;
           tokenTimestamp = userData._lastTokenTime || Date.now();
+        } else {
+          console.log('User found in storage but no token available');
         }
+      } else {
+        console.log('No user found in storage');
       }
     } catch (error) {
       console.error("Failed to initialize token from storage:", error);

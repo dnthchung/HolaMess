@@ -22,12 +22,15 @@ const { PORT, MONGODB_URI, NODE_ENV, CORS_ORIGIN, COOKIE_SECRET } = config;
 const app = express();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false
+}));
 app.use(cors({
-  origin: CORS_ORIGIN,
+  origin: true, // Allow all origins in development
   credentials: true, // Allow cookies to be sent with requests
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cookie'],
   exposedHeaders: ['Content-Range', 'X-Content-Range', 'Set-Cookie']
 }));
 app.use(express.json());
@@ -47,10 +50,10 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: CORS_ORIGIN,
+    origin: true, // Allow all origins in development
     credentials: true, // Allow cookies with socket connections
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cookie']
   }
 });
 

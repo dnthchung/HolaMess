@@ -54,10 +54,11 @@ export const signup: RequestHandler = async (req, res) => {
     // Set refresh token as an HTTP-only cookie
     res.cookie(config.REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
       httpOnly: true,
-      secure: config.NODE_ENV === 'production',
+      secure: config.COOKIE_SECURE,
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
-      sameSite: 'lax',
-      path: '/'
+      sameSite: config.COOKIE_SAME_SITE,
+      path: '/',
+      domain: config.COOKIE_DOMAIN
     });
 
     res.status(201).json({
@@ -117,10 +118,11 @@ export const login: RequestHandler = async (req, res) => {
     // Set refresh token as an HTTP-only cookie
     res.cookie(config.REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
       httpOnly: true,
-      secure: config.NODE_ENV === 'production',
+      secure: config.COOKIE_SECURE,
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
-      sameSite: 'lax',
-      path: '/'
+      sameSite: config.COOKIE_SAME_SITE,
+      path: '/',
+      domain: config.COOKIE_DOMAIN
     });
 
     res.json({
@@ -161,9 +163,10 @@ export const logout: RequestHandler = async (req: AuthRequest, res) => {
     // Clear refresh token cookie
     res.clearCookie(config.REFRESH_TOKEN_COOKIE_NAME, {
       httpOnly: true,
-      secure: config.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
+      secure: config.COOKIE_SECURE,
+      sameSite: config.COOKIE_SAME_SITE,
+      path: '/',
+      domain: config.COOKIE_DOMAIN
     });
 
     // Log action
@@ -206,17 +209,22 @@ export const refreshToken: RequestHandler = async (req: AuthRequest, res) => {
       deviceInfo: deviceInfo?.substring(0, 50) // Truncate for logging
     });
 
-    if (!userId || !oldRefreshToken) {
-      logger.warn('Token refresh failed - Invalid credentials', {
-        hasUserId: !!userId,
-        hasRefreshToken: !!oldRefreshToken
-      });
-      res.status(401).json({ error: 'Unauthorized - Invalid refresh flow' });
+    if (!userId) {
+      logger.warn('Token refresh failed - No user ID');
+      res.status(401).json({ error: 'Unauthorized - No user ID found' });
       return;
     }
 
-    // Revoke the old refresh token (one-time use)
-    await revokeRefreshToken(oldRefreshToken);
+    // If we have a refresh token, try to revoke it
+    if (oldRefreshToken) {
+      try {
+        await revokeRefreshToken(oldRefreshToken);
+        logger.debug('Old refresh token revoked successfully');
+      } catch (error) {
+        logger.warn('Failed to revoke old refresh token', { error });
+        // Continue anyway since we have a valid user
+      }
+    }
 
     // Generate new tokens
     const { accessToken, refreshToken, expiresIn } = await generateTokens(
@@ -231,10 +239,11 @@ export const refreshToken: RequestHandler = async (req: AuthRequest, res) => {
     // Set new refresh token cookie
     res.cookie(config.REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
       httpOnly: true,
-      secure: config.NODE_ENV === 'production',
+      secure: config.COOKIE_SECURE,
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
-      sameSite: 'lax',
-      path: '/'
+      sameSite: config.COOKIE_SAME_SITE,
+      path: '/',
+      domain: config.COOKIE_DOMAIN
     });
 
     logger.info('Token refreshed successfully', { userId });
