@@ -296,6 +296,28 @@ export const removeUserSession = async (token: string): Promise<boolean> => {
 // Middleware to handle refresh token
 export const authenticateRefreshToken = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
+    // Debug log all cookies and headers for inspection
+    logger.debug('All cookies in request:', {
+      service: 'hola-mess-api',
+      cookies: req.cookies,
+      signedCookies: req.signedCookies,
+      hasAuthCookie: !!req.cookies[config.REFRESH_TOKEN_COOKIE_NAME]
+    });
+
+    logger.debug('Request details:', {
+      service: 'hola-mess-api',
+      url: req.url,
+      method: req.method,
+      headers: {
+        origin: req.headers.origin,
+        host: req.headers.host,
+        referer: req.headers.referer,
+        authorization: req.headers.authorization ? 'Present' : 'Not present',
+        cookie: req.headers.cookie ? 'Present' : 'Not present'
+      },
+      ip: req.ip
+    });
+
     // Extract refresh token from multiple sources with priority:
     // 1. Cookie
     // 2. Authorization header (Bearer token)
@@ -330,6 +352,7 @@ export const authenticateRefreshToken = async (req: AuthRequest, res: Response, 
     // Log token details for debugging
     logger.debug('Processing refresh token request', {
       tokenLength: refreshToken.length,
+      tokenPrefix: refreshToken.substring(0, 10) + '...',
       hasCookie: !!req.cookies[config.REFRESH_TOKEN_COOKIE_NAME],
       hasAuthHeader: !!(req.headers.authorization && req.headers.authorization.startsWith('Bearer ')),
       hasBodyToken: !!req.body.refreshToken
@@ -356,6 +379,7 @@ export const authenticateRefreshToken = async (req: AuthRequest, res: Response, 
     req.user = user;
     req.refreshToken = refreshToken;
 
+    logger.debug('Refresh token authenticated successfully', { userId: user._id });
     next();
   } catch (error) {
     logger.error('Refresh token middleware error', error);

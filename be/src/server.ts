@@ -27,8 +27,8 @@ app.use(cors({
   origin: CORS_ORIGIN,
   credentials: true, // Allow cookies to be sent with requests
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Set-Cookie']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

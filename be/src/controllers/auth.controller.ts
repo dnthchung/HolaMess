@@ -57,6 +57,7 @@ export const signup: RequestHandler = async (req, res) => {
       secure: config.NODE_ENV === 'production',
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
       sameSite: 'lax',
+      path: '/'
     });
 
     res.status(201).json({
@@ -119,6 +120,7 @@ export const login: RequestHandler = async (req, res) => {
       secure: config.NODE_ENV === 'production',
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
       sameSite: 'lax',
+      path: '/'
     });
 
     res.json({
@@ -157,7 +159,12 @@ export const logout: RequestHandler = async (req: AuthRequest, res) => {
     }
 
     // Clear refresh token cookie
-    res.clearCookie(config.REFRESH_TOKEN_COOKIE_NAME);
+    res.clearCookie(config.REFRESH_TOKEN_COOKIE_NAME, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
 
     // Log action
     if (operations.sessionRemoved || operations.refreshTokenRevoked) {
@@ -227,6 +234,7 @@ export const refreshToken: RequestHandler = async (req: AuthRequest, res) => {
       secure: config.NODE_ENV === 'production',
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
       sameSite: 'lax',
+      path: '/'
     });
 
     logger.info('Token refreshed successfully', { userId });

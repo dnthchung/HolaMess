@@ -11,7 +11,14 @@ const API_TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT) || 15000;
 const apiClient = axios.create({
   baseURL: `${API_URL}/api`,
   withCredentials: true, // Required for cookies
-  timeout: API_TIMEOUT
+  timeout: API_TIMEOUT,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest'
+  },
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-XSRF-TOKEN'
 });
 
 // Flag to track if a token refresh is already in progress
@@ -47,16 +54,20 @@ const retryRequest = (originalRequest: AxiosRequestConfig, newToken: string): Pr
 const refreshToken = async (): Promise<string> => {
   console.log('🔄 Refreshing access token...');
   try {
-    // Use cookies only - don't send token in header
+    // Use axios directly to bypass any interceptors
     const response = await axios.post<TokenRefreshResponse>(
       `${API_URL}/api/auth/refresh-token`,
       {},
       {
-        withCredentials: true, // This ensures cookies are sent
+        withCredentials: true,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest' // Some servers check this for CORS
+        },
+        // Explicitly disable credentials to ensure cookies are sent
+        xsrfCookieName: 'XSRF-TOKEN',
+        xsrfHeaderName: 'X-XSRF-TOKEN',
       }
     );
 
