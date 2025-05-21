@@ -56,7 +56,7 @@ export const signup: RequestHandler = async (req, res) => {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
-      sameSite: 'strict',
+      sameSite: 'lax',
     });
 
     res.status(201).json({
@@ -118,7 +118,7 @@ export const login: RequestHandler = async (req, res) => {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
-      sameSite: 'strict',
+      sameSite: 'lax',
     });
 
     res.json({
@@ -226,7 +226,7 @@ export const refreshToken: RequestHandler = async (req: AuthRequest, res) => {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
       maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
-      sameSite: 'strict',
+      sameSite: 'lax',
     });
 
     logger.info('Token refreshed successfully', { userId });
