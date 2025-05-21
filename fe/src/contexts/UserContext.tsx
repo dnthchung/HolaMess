@@ -1,231 +1,202 @@
-"use client"
+"use client";
 
-import { createContext, useState, useContext, useEffect, type ReactNode } from "react"
-import type { User, AuthResponse } from "../types"
-import { apiService } from "../services/apiService"
-import { tokenService } from "../services/tokenService"
+import {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  type ReactNode,
+} from "react";
+
+import type { User, AuthResponse } from "../types";
+import { apiService } from "../services/apiService";
+import { tokenService } from "../services/tokenService";
 
 interface UserContextType {
-  user: User | null
-  setUser: (user: User | null) => void
-  login: (phone: string, password: string) => Promise<void>
-  signup: (name: string, phone: string, password: string) => Promise<void>
-  logout: () => Promise<void>
-  refreshToken: () => Promise<void>
-  isLoading: boolean
-  error: string | null
-  clearError: () => void
+  user: User | null;
+  setUser: (user: User | null) => void;
+  login: (phone: string, password: string) => Promise<void>;
+  signup: (name: string, phone: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshToken: () => Promise<void>;
+  isLoading: boolean;
+  error: string | null;
+  clearError: () => void;
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined)
+const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const UserProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUserState] = useState<User | null>(() => {
     try {
-      const savedUser = localStorage.getItem("user")
+      const savedUser = localStorage.getItem("user");
       if (savedUser) {
-        const parsedUser = JSON.parse(savedUser)
-        console.log("Loaded user from localStorage", { name: parsedUser.name, id: parsedUser.id })
-        return parsedUser
+        const parsedUser = JSON.parse(savedUser);
+        // console.log("Loaded user from localStorage", {
+        //   name: parsedUser.name,
+        //   id: parsedUser.id,
+        // });
+        return parsedUser;
       }
-      return null
+      return null;
     } catch (error) {
-      console.error("Error parsing user from localStorage:", error)
-      localStorage.removeItem("user")
-      return null
+      // console.error("Error parsing user from localStorage:", error);
+      localStorage.removeItem("user");
+      return null;
     }
-  })
-  const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
+  });
 
-  // Update local state and storage
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
   const setUser = (newUser: User | null) => {
-    console.log("Updating user state:", newUser ? { id: newUser.id, name: newUser.name } : "null")
-    setUserState(newUser)
-
+    // console.log(
+    //   "Updating user state:",
+    //   newUser ? { id: newUser.id, name: newUser.name } : "null"
+    // );
+    setUserState(newUser);
     if (newUser) {
-      localStorage.setItem("user", JSON.stringify(newUser))
-
-      // If we have a token, update the token service
+      localStorage.setItem("user", JSON.stringify(newUser));
       if (newUser.token) {
-        tokenService.setToken(newUser.token, newUser.expiresIn || 0)
+        tokenService.setToken(newUser.token, newUser.expiresIn || 0);
       }
     } else {
-      localStorage.removeItem("user")
-      tokenService.clearToken()
+      localStorage.removeItem("user");
+      tokenService.clearToken();
     }
-  }
+  };
 
-  const clearError = () => setError(null)
+  const clearError = () => setError(null);
 
-  // Login function - uses apiService
   const login = async (phone: string, password: string) => {
-    setIsLoading(true)
-    setError(null)
-
+    setIsLoading(true);
+    setError(null);
     try {
-      const response = await apiService.auth.login(phone, password)
-      const userData = response.data as AuthResponse
-
-      // Set user with token in state and localStorage
+      const response = await apiService.auth.login(phone, password);
+      const userData = response.data as AuthResponse;
       setUser({
         id: userData.id,
         name: userData.name,
         phone: userData.phone,
         token: userData.token,
-        expiresIn: userData.expiresIn
-      })
-
-      console.log("Login successful - refresh token should be stored in cookies")
+        expiresIn: userData.expiresIn,
+      });
+      // console.log("Login successful - refresh token should be stored in cookies");
     } catch (err: any) {
-      console.error("Login error:", err)
-      setError(err.response?.data?.error || 'Login failed')
-      throw err
+      // console.error("Login error:", err);
+      setError(err.response?.data?.error || "Login failed");
+      throw err;
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  // Signup function - uses apiService
   const signup = async (name: string, phone: string, password: string) => {
-    setIsLoading(true)
-    setError(null)
-
+    setIsLoading(true);
+    setError(null);
     try {
-      const response = await apiService.auth.signup(name, phone, password)
-      const userData = response.data
-
-      // Set user with token in state and localStorage
+      const response = await apiService.auth.signup(name, phone, password);
+      const userData = response.data;
       setUser({
         id: userData.user.id,
         name: userData.user.name,
         phone: userData.user.phone,
         token: userData.token,
-        expiresIn: userData.expiresIn
-      })
-
-      console.log("Signup successful")
+        expiresIn: userData.expiresIn,
+      });
+      // console.log("Signup successful");
     } catch (err: any) {
-      console.error("Signup error:", err)
-      setError(err.response?.data?.error || 'Signup failed')
-      throw err
+      // console.error("Signup error:", err);
+      setError(err.response?.data?.error || "Signup failed");
+      throw err;
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  // Logout function - uses apiService
   const logout = async () => {
-    setIsLoading(true)
-
-    try {
-      // Only try to call API if we have a user
-      if (user) {
-        await apiService.auth.logout()
-        console.log("Logout API call successful")
-      }
-
-      // Clear user data from state and storage regardless of API call result
-      setUser(null)
-    } catch (err) {
-      console.error("Logout error:", err)
-      // Still clear user even if API call fails
-      setUser(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Manually refresh token
-  const refreshToken = async () => {
     setIsLoading(true);
-
     try {
-      if (!user) {
-        console.error("No user data available for token refresh");
-        throw new Error("No user to refresh token for");
+      if (user) {
+        await apiService.auth.logout();
+        // console.log("Logout API call successful");
       }
-
-      console.log("Manually refreshing token...");
-
-      try {
-        // First try with normal cookie-based authentication
-        const response = await apiService.auth.refreshToken();
-        const { token, expiresIn } = response.data;
-
-        console.log("✅ Manual token refresh successful", { expiresIn });
-
-        // Update user with new token
-        setUser({
-          ...user,
-          token,
-          expiresIn
-        });
-      } catch (apiError: any) {
-        // If cookie-based fails, try with token in body as fallback
-        console.warn("Cookie-based refresh failed, trying fallback with token in body", {
-          status: apiError.response?.status,
-          data: apiError.response?.data
-        });
-
-        try {
-          // Send the access token in the body as a fallback
-          if (!user.token) {
-            throw new Error("No token available for fallback refresh");
-          }
-          const fallbackResponse = await apiService.auth.refreshTokenFallback(user.token);
-          const { token, expiresIn } = fallbackResponse.data;
-
-          console.log("✅ Fallback token refresh successful", { expiresIn });
-
-          // Update user with new token
-          setUser({
-            ...user,
-            token,
-            expiresIn
-          });
-        } catch (fallbackError: any) {
-          // Both methods failed
-          console.error("Both refresh methods failed:", {
-            cookieError: apiError?.message,
-            fallbackError: fallbackError?.message
-          });
-          throw fallbackError;
-        }
-      }
+      setUser(null);
     } catch (err) {
-      console.error("Token refresh failed, logging out user");
-      // If refresh fails, logout user
+      // console.error("Logout error:", err);
       setUser(null);
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
-  // Set up token refresh timer
-  useEffect(() => {
-    if (!user?.token || !user.expiresIn) return
-
-    // Calculate when to refresh (at 80% of expiry time to be safe)
-    const refreshTime = (user.expiresIn * 0.8) * 1000
-
-    // Debug information
-    const isDevelopment = import.meta.env.DEV
-    if (isDevelopment) {
-      const refreshDate = new Date(Date.now() + refreshTime).toLocaleTimeString()
-      console.log(`Token refresh scheduled for ${refreshDate} (${refreshTime/1000}s from now)`)
-    }
-
-    // Set up timer for token refresh
-    const timerId = setTimeout(() => {
-      console.log("Token refresh timer triggered")
-      if (tokenService.hasValidToken()) {
-        refreshToken()
+  const refreshToken = async () => {
+    setIsLoading(true);
+    try {
+      if (!user) {
+        // console.error("No user data available for token refresh");
+        throw new Error("No user to refresh token for");
       }
-    }, refreshTime)
+      // console.log("Manually refreshing token...");
+      try {
+        const response = await apiService.auth.refreshToken();
+        const { token, expiresIn } = response.data;
+        // console.log("✅ Manual token refresh successful", { expiresIn });
+        setUser({ ...user, token, expiresIn });
+      } catch (apiError: any) {
+        // console.warn(
+        //   "Cookie-based refresh failed, trying fallback with token in body",
+        //   {
+        //     status: apiError.response?.status,
+        //     data: apiError.response?.data,
+        //   }
+        // );
+        try {
+          if (!user.token) {
+            throw new Error("No token available for fallback refresh");
+          }
+          const fallbackResponse = await apiService.auth.refreshTokenFallback(
+            user.token
+          );
+          const { token, expiresIn } = fallbackResponse.data;
+          // console.log("✅ Fallback token refresh successful", { expiresIn });
+          setUser({ ...user, token, expiresIn });
+        } catch (fallbackError: any) {
+          // console.error("Both refresh methods failed:", {
+          //   cookieError: apiError?.message,
+          //   fallbackError: fallbackError?.message,
+          // });
+          throw fallbackError;
+        }
+      }
+    } catch (err) {
+      // console.error("Token refresh failed, logging out user");
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    return () => clearTimeout(timerId)
-  }, [user?.token, user?.expiresIn])
+  useEffect(() => {
+    if (!user?.token || !user.expiresIn) return;
+    const refreshTime = user.expiresIn * 0.8 * 1000;
+    const isDevelopment = import.meta.env.DEV;
+    if (isDevelopment) {
+      const refreshDate = new Date(
+        Date.now() + refreshTime
+      ).toLocaleTimeString();
+      // console.log(
+      //   `Token refresh scheduled for ${refreshDate} (${refreshTime / 1000}s from now)`
+      // );
+    }
+    const timerId = setTimeout(() => {
+      // console.log("Token refresh timer triggered");
+      if (tokenService.hasValidToken()) {
+        refreshToken();
+      }
+    }, refreshTime);
+    return () => clearTimeout(timerId);
+  }, [user?.token, user?.expiresIn]);
 
   return (
     <UserContext.Provider
@@ -238,18 +209,18 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         refreshToken,
         isLoading,
         error,
-        clearError
+        clearError,
       }}
     >
       {children}
     </UserContext.Provider>
-  )
-}
+  );
+};
 
 export const useUser = () => {
-  const context = useContext(UserContext)
+  const context = useContext(UserContext);
   if (context === undefined) {
-    throw new Error("useUser must be used within a UserProvider")
+    throw new Error("useUser must be used within a UserProvider");
   }
-  return context
-}
+  return context;
+};

@@ -1,18 +1,23 @@
-import type { RefObject } from "react"
-import type { Message } from "../types"
+import type { RefObject } from "react";
+import type { Message } from "../types";
 
 interface ChatWindowProps {
-  messages: Message[]
-  currentUserId: string
-  loading: boolean
-  messagesEndRef: RefObject<HTMLDivElement>
+  messages: Message[];
+  currentUserId: string;
+  loading: boolean;
+  messagesEndRef: RefObject<HTMLDivElement>;
 }
 
-const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWindowProps) => {
+const ChatWindow = ({
+  messages,
+  currentUserId,
+  loading,
+  messagesEndRef,
+}: ChatWindowProps) => {
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  }
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
 
   const getReadStatus = (message: Message) => {
     if (message.sender !== currentUserId) {
@@ -40,12 +45,19 @@ const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWi
             </div>
           ) : (
             messages.map((message) => {
-              const isSentByMe = message.sender === currentUserId
-              // Use a combination of ID and content for key to ensure uniqueness
-              const messageKey = `${message._id}-${message.content.substring(0, 10)}-${message.createdAt}`
+              const isSentByMe = message.sender === currentUserId;
+              const messageKey = `${message._id}-${message.content.substring(
+                0,
+                10
+              )}-${message.createdAt}`;
 
               return (
-                <div key={messageKey} className={`mb-4 flex ${isSentByMe ? "justify-end" : "justify-start"}`}>
+                <div
+                  key={messageKey}
+                  className={`mb-4 flex ${
+                    isSentByMe ? "justify-end" : "justify-start"
+                  }`}
+                >
                   <div
                     className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
                       isSentByMe
@@ -54,20 +66,24 @@ const ChatWindow = ({ messages, currentUserId, loading, messagesEndRef }: ChatWi
                     }`}
                   >
                     <div>{message.content}</div>
-                    <div className={`text-xs mt-1 flex justify-between ${isSentByMe ? "text-indigo-200" : "text-gray-500"}`}>
+                    <div
+                      className={`text-xs mt-1 flex justify-between ${
+                        isSentByMe ? "text-indigo-200" : "text-gray-500"
+                      }`}
+                    >
                       <span>{formatTime(message.createdAt)}</span>
                       {getReadStatus(message)}
                     </div>
                   </div>
                 </div>
-              )
+              );
             })
           )}
           <div ref={messagesEndRef} />
         </>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default ChatWindow
+export default ChatWindow;

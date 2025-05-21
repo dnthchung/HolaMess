@@ -1,41 +1,43 @@
-"use client"
+"use client";
 
-import type React from "react"
-
-import { useState } from "react"
+import type React from "react";
+import { useState } from "react";
 
 interface MessageInputProps {
-  onSendMessage: (content: string) => void
-  onFocus?: () => void
+  onSendMessage: (content: string) => void;
+  onFocus?: () => void;
 }
 
 const MessageInput = ({ onSendMessage, onFocus }: MessageInputProps) => {
-  const [message, setMessage] = useState("")
+  const [message, setMessage] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (message.trim()) {
-      console.log("Sending message:", message)
-      onSendMessage(message)
-      setMessage("")
+      console.log("Sending message:", message);
+      onSendMessage(message);
+      setMessage("");
     }
-  }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e as unknown as React.FormEvent)
+      e.preventDefault();
+      handleSubmit(e as unknown as React.FormEvent);
     }
-  }
+  };
 
   const handleFocus = () => {
     if (onFocus) {
-      onFocus()
+      onFocus();
     }
-  }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4 bg-white">
+    <form
+      onSubmit={handleSubmit}
+      className="border-t border-gray-200 p-4 bg-white"
+    >
       <div className="flex items-center">
         <input
           type="text"
@@ -55,7 +57,7 @@ const MessageInput = ({ onSendMessage, onFocus }: MessageInputProps) => {
         </button>
       </div>
     </form>
-  )
-}
+  );
+};
 
-export default MessageInput
+export default MessageInput;
