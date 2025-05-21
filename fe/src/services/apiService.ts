@@ -47,12 +47,12 @@ const retryRequest = (originalRequest: AxiosRequestConfig, newToken: string): Pr
 const refreshToken = async (): Promise<string> => {
   console.log('🔄 Refreshing access token...');
   try {
-    // First try with cookies (default approach)
+    // Use cookies only - don't send token in header
     const response = await axios.post<TokenRefreshResponse>(
       `${API_URL}/api/auth/refresh-token`,
       {},
       {
-        withCredentials: true,
+        withCredentials: true, // This ensures cookies are sent
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
@@ -165,9 +165,16 @@ export const apiService = {
     signup: (name: string, phone: string, password: string) =>
       apiClient.post('/auth/signup', { name, phone, password }),
 
-    logout: () => apiClient.post('/auth/logout'),
+    logout: () => apiClient.post('/auth/logout', {}, {
+      withCredentials: true
+    }),
 
-    refreshToken: () => apiClient.post('/auth/refresh-token'),
+    refreshToken: () => {
+      // Only use cookie-based authentication
+      return apiClient.post('/auth/refresh-token', {}, {
+        withCredentials: true
+      });
+    },
 
     getUsers: (exclude?: string) =>
       apiClient.get('/auth/users', { params: { exclude } }),

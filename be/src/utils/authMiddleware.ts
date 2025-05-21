@@ -296,11 +296,30 @@ export const removeUserSession = async (token: string): Promise<boolean> => {
 // Middleware to handle refresh token
 export const authenticateRefreshToken = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    // Get refresh token from cookie
-    const refreshToken = req.cookies[config.REFRESH_TOKEN_COOKIE_NAME] ||
-                         req.body.refreshToken ||
-                         (req.headers.authorization && req.headers.authorization.startsWith('Bearer ') ?
-                          req.headers.authorization.split(' ')[1] : null);
+    // Extract refresh token from multiple sources with priority:
+    // 1. Cookie
+    // 2. Authorization header (Bearer token)
+    // 3. Request body
+
+    let refreshToken: string | null = null;
+
+    // Check in cookie first
+    if (req.cookies && req.cookies[config.REFRESH_TOKEN_COOKIE_NAME]) {
+      refreshToken = req.cookies[config.REFRESH_TOKEN_COOKIE_NAME];
+      logger.debug('Refresh token found in cookie');
+    }
+
+    // If not in cookie, check authorization header
+    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      refreshToken = req.headers.authorization.split(' ')[1];
+      logger.debug('Refresh token found in authorization header');
+    }
+
+    // Last resort, check request body
+    else if (req.body && req.body.refreshToken) {
+      refreshToken = req.body.refreshToken;
+      logger.debug('Refresh token found in request body');
+    }
 
     if (!refreshToken) {
       logger.warn('Refresh token authentication failed - No token provided');
@@ -310,11 +329,10 @@ export const authenticateRefreshToken = async (req: AuthRequest, res: Response, 
 
     // Log token details for debugging
     logger.debug('Processing refresh token request', {
+      tokenLength: refreshToken.length,
       hasCookie: !!req.cookies[config.REFRESH_TOKEN_COOKIE_NAME],
-      hasBodyToken: !!req.body.refreshToken,
       hasAuthHeader: !!(req.headers.authorization && req.headers.authorization.startsWith('Bearer ')),
-      tokenSource: req.cookies[config.REFRESH_TOKEN_COOKIE_NAME] ? 'cookie' :
-                  req.body.refreshToken ? 'body' : 'header'
+      hasBodyToken: !!req.body.refreshToken
     });
 
     // Verify refresh token
