@@ -11,6 +11,7 @@ interface SocketContextType {
   status: 'online' | 'offline'
   disconnectSocket: () => void
   otherDevices: DeviceInfo[]
+  reconnectSocket: () => void
 }
 
 interface DeviceInfo {
@@ -28,7 +29,13 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [lastActiveTime, setLastActiveTime] = useState<Date | null>(null)
   const [status, setStatus] = useState<'online' | 'offline'>('offline')
   const [otherDevices, setOtherDevices] = useState<DeviceInfo[]>([])
-  const { user } = useUser()
+  const { user, setUser } = useUser()
+
+  const handleLogout = () => {
+    localStorage.removeItem("user")
+    sessionStorage.clear()
+    setUser(null)
+  }
 
   const disconnectSocket = () => {
     if (socket) {
@@ -41,11 +48,15 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     }
   }
 
-  useEffect(() => {
-    if (!user) {
+  const reconnectSocket = () => {
+    if (user && user.token) {
       disconnectSocket()
-      return
+      initializeSocket()
     }
+  }
+
+  const initializeSocket = () => {
+    if (!user) return null
 
     // Connect to socket server - use the same URL as the API
     const newSocket = io("http://localhost:3000", {
@@ -73,6 +84,12 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
             console.error('Socket authentication failed:', response.error);
             setIsConnected(false)
             setStatus('offline')
+
+            // If authentication failed due to token issues, trigger logout
+            if (response.error === 'Invalid token' || response.error === 'Invalid session') {
+              console.log('Token invalid, logging out');
+              handleLogout();
+            }
           }
         });
       } else {
@@ -101,6 +118,27 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       console.error("Server error:", error)
     })
 
+    // Handle token expired event
+    newSocket.on("token_expired", (data) => {
+      console.warn("Token expired:", data.message)
+      newSocket.disconnect()
+      setIsConnected(false)
+      setStatus('offline')
+
+      // Trigger logout
+      handleLogout()
+    })
+
+    // Handle authentication errors
+    newSocket.on("auth_error", (data) => {
+      console.warn("Authentication error:", data.message)
+
+      // If token expired, trigger logout
+      if (data.message === "Token expired") {
+        handleLogout()
+      }
+    })
+
     // Handle device connected notification
     newSocket.on("device_connected", (data) => {
       console.log("Another device connected:", data)
@@ -126,17 +164,31 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       // We'll handle this in the chat page to update UI
     })
 
-    // Update last active time periodically when connected
-    const activityInterval = setInterval(() => {
-      if (isConnected) {
-        setLastActiveTime(new Date())
-      }
-    }, 60000) // update every minute
+    return newSocket
+  }
+
+  useEffect(() => {
+    let newSocket: Socket | null = null
+    let activityInterval: ReturnType<typeof setInterval> | null = null
+
+    if (user) {
+      newSocket = initializeSocket()
+
+      // Update last active time periodically when connected
+      activityInterval = setInterval(() => {
+        if (isConnected) {
+          setLastActiveTime(new Date())
+        }
+      }, 60000) // update every minute
+    }
 
     return () => {
-      console.log("Cleaning up socket connection")
-      clearInterval(activityInterval)
-      newSocket.disconnect()
+      if (activityInterval) {
+        clearInterval(activityInterval)
+      }
+      if (newSocket) {
+        newSocket.disconnect()
+      }
     }
   }, [user])
 
@@ -147,7 +199,8 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       lastActiveTime,
       status,
       disconnectSocket,
-      otherDevices
+      otherDevices,
+      reconnectSocket
     }}>
       {children}
     </SocketContext.Provider>
