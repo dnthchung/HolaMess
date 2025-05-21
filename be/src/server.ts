@@ -4,6 +4,7 @@ import { Server as SocketIOServer } from "socket.io";
 import mongoose from "mongoose";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import config from "./config";
 import { logger } from "./utils/logger";
 
@@ -15,7 +16,7 @@ import authRoutes from "./routes/auth.routes";
 import messageRoutes from "./routes/message.routes";
 
 // Application constants
-const { PORT, MONGODB_URI, NODE_ENV, CORS_ORIGIN } = config;
+const { PORT, MONGODB_URI, NODE_ENV, CORS_ORIGIN, COOKIE_SECRET } = config;
 
 // Create Express app
 const app = express();
@@ -23,10 +24,15 @@ const app = express();
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: NODE_ENV === 'production' ? CORS_ORIGIN : '*'
+  origin: CORS_ORIGIN,
+  credentials: true, // Allow cookies to be sent with requests
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser(COOKIE_SECRET)); // Parse cookies
 
 // API request logging middleware
 app.use((req, res, next) => {
@@ -41,7 +47,10 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: NODE_ENV === 'production' ? CORS_ORIGIN : '*'
+    origin: CORS_ORIGIN,
+    credentials: true, // Allow cookies with socket connections
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
   }
 });
 
@@ -93,6 +102,18 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 server.listen(PORT, () => {
   logger.info(`🚀 Server running in ${NODE_ENV} mode on http://localhost:${PORT}`);
+}).on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    logger.warn(`Port ${PORT} is already in use. Trying port ${Number(PORT) + 1}...`);
+    // Try the next port
+    server.listen(Number(PORT) + 1, () => {
+      const actualPort = (server.address() as any).port;
+      logger.info(`🚀 Server running in ${NODE_ENV} mode on http://localhost:${actualPort}`);
+    });
+  } else {
+    logger.error('Server failed to start:', err);
+    process.exit(1);
+  }
 });
 
 // Graceful shutdown

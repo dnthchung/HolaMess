@@ -5,6 +5,7 @@ export interface User {
     name: string
     phone: string
     token?: string // JWT token for authentication
+    expiresIn?: number // Token expiration time in seconds
   }
 
   export interface Message {
@@ -31,4 +32,23 @@ export interface User {
       read: boolean
     }
     unreadCount: number
+  }
+
+  export interface TokenData {
+    token: string // access token
+    expiresIn: number // expiration time in seconds
+    refreshToken?: string // refresh token may be sent only on login/signup
+  }
+
+  export interface AuthResponse {
+    id: string
+    name: string
+    phone: string
+    token: string
+    expiresIn: number
+  }
+
+  export interface TokenRefreshResponse {
+    token: string
+    expiresIn: number
   }

@@ -4,18 +4,16 @@ import App from "./App.tsx"
 import "./index.css"
 import axios from "axios"
 
-// Set base URL for API requests
-axios.defaults.baseURL = "http://localhost:3000"
+// Get API URL from environment variables or use default
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+axios.defaults.baseURL = API_URL
 
-// Add request interceptor to include JWT token in requests
 axios.interceptors.request.use(
   config => {
-    // Get user data from local storage
     const userData = localStorage.getItem("user")
     if (userData) {
       const user = JSON.parse(userData)
       if (user && user.token) {
-        // Add Authorization header with Bearer token
         config.headers.Authorization = `Bearer ${user.token}`
       }
     }

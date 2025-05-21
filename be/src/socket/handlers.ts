@@ -20,11 +20,51 @@ interface OnlineUsers {
 interface SocketWithAuth extends Socket {
   userId?: string;
   deviceInfo?: string;
+  token?: string; // Store the token for later validation
+}
+
+// Helper function to verify token validity
+async function verifyTokenValidity(token: string): Promise<boolean> {
+  try {
+    // Verify JWT token
+    jwt.verify(token, config.JWT_SECRET as jwt.Secret);
+
+    // Check if session exists
+    const session = await Session.findOne({ token });
+    if (!session) {
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+// Middleware to authenticate socket operations
+async function authenticateSocketOperation(socket: SocketWithAuth): Promise<boolean> {
+  if (!socket.token) {
+    logger.warn(`Socket operation authentication failed - No token for socket ${socket.id}`);
+    socket.emit("auth_error", { message: "Authentication required" });
+    return false;
+  }
+
+  const isValid = await verifyTokenValidity(socket.token);
+  if (!isValid) {
+    logger.warn(`Socket operation authentication failed - Invalid token for socket ${socket.id}`);
+    socket.emit("auth_error", { message: "Token expired" });
+    socket.disconnect(true);
+    return false;
+  }
+
+  return true;
 }
 
 const setupSocketHandlers = (io: Server) => {
   // Keep track of online users across multiple devices
   const onlineUsers: OnlineUsers = {};
+  // Map to associate tokens with sockets for periodic validation
+  const socketTokens: Map<string, string> = new Map();
 
   // Helper function to notify a user's other devices
   function notifyUserDevices(
@@ -41,6 +81,30 @@ const setupSocketHandlers = (io: Server) => {
       });
     }
   }
+
+  // Set up periodic token validation (every 5 minutes)
+  setInterval(async () => {
+    const socketIds = Array.from(socketTokens.keys());
+    logger.info(`Running periodic token validation for ${socketIds.length} sockets`);
+
+    for (const socketId of socketIds) {
+      const socket = io.sockets.sockets.get(socketId) as SocketWithAuth | undefined;
+      if (socket) {
+        const token = socketTokens.get(socketId);
+        if (token) {
+          const isValid = await verifyTokenValidity(token);
+          if (!isValid) {
+            logger.warn(`Token expired for socket ${socketId}, disconnecting`);
+            socket.emit("token_expired", { message: "Your session has expired, please re-authenticate" });
+            socket.disconnect(true);
+          }
+        }
+      } else {
+        // Socket no longer exists, clean up our map
+        socketTokens.delete(socketId);
+      }
+    }
+  }, 5 * 60 * 1000); // every 5 minutes
 
   io.on("connection", (socket: SocketWithAuth) => {
     logger.info(`Socket connected: ${socket.id}`);
@@ -66,9 +130,13 @@ const setupSocketHandlers = (io: Server) => {
         session.lastActive = new Date();
         await session.save();
 
-        // Associate user ID with socket
+        // Associate user ID and token with socket
         socket.userId = userId;
         socket.deviceInfo = session.deviceInfo;
+        socket.token = token;
+
+        // Store token for periodic validation
+        socketTokens.set(socket.id, token);
 
         // Add the socket to the user's online sockets
         if (!onlineUsers[userId]) {
@@ -121,6 +189,9 @@ const setupSocketHandlers = (io: Server) => {
 
     // Handle private messages
     socket.on("private_message", async (data: PrivateMessageData, callback) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
       const { sender, receiver, content } = data;
 
       // Validate message data
@@ -189,7 +260,10 @@ const setupSocketHandlers = (io: Server) => {
     });
 
     // Handle typing indicators
-    socket.on("typing", ({ sender, receiver }: { sender: string, receiver: string }) => {
+    socket.on("typing", async ({ sender, receiver }: { sender: string, receiver: string }) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
       // Send typing indicator to all receiver's devices
       if (onlineUsers[receiver]) {
         onlineUsers[receiver].forEach(socketId => {
@@ -200,6 +274,9 @@ const setupSocketHandlers = (io: Server) => {
 
     // Handle read receipts
     socket.on("mark_read", async ({ userId, otherUserId }: { userId: string, otherUserId: string }) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
       try {
         // Update messages as read
         const result = await Message.updateMany(
@@ -238,6 +315,9 @@ const setupSocketHandlers = (io: Server) => {
     // Handle disconnect
     socket.on("disconnect", () => {
       const userId = socket.userId;
+
+      // Remove token from our validation map
+      socketTokens.delete(socket.id);
 
       if (userId && onlineUsers[userId]) {
         // Remove this socket from the user's set
