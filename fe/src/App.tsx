@@ -24,7 +24,7 @@ const UnauthenticatedRoute = ({ children }: { children: JSX.Element }) => {
 
 // AppRoutes component to contain routes, using user context
 const AppRoutes = () => {
-  const { user, setUser } = useUser();
+  const { user, setUser, refreshToken } = useUser();
 
   useEffect(() => {
     // Check if user is logged in on app start
@@ -35,6 +35,24 @@ const AppRoutes = () => {
         // Validate that the user data has the required fields
         if (userData && userData.id && userData.name) {
           setUser(userData);
+
+          // If token exists but is about to expire (less than 20% of its lifetime left),
+          // perform a token refresh immediately on app startup
+          if (userData.token && userData.expiresIn) {
+            const remainingTime = userData.expiresIn * 1000 - (Date.now() - (userData._lastTokenTime || 0));
+            const refreshThreshold = userData.expiresIn * 200; // 20% of total time
+
+            if (remainingTime < refreshThreshold) {
+              console.log('🔄 Token near expiration on app startup. Refreshing token...');
+              // Refresh token without waiting
+              refreshToken().catch(err => {
+                console.error('Failed to refresh token on app startup:', err);
+              });
+            } else {
+              console.log('✅ Token still valid on app startup. Remaining time:',
+                Math.floor(remainingTime / 1000), 'seconds');
+            }
+          }
         } else {
           console.error("Invalid user data in localStorage:", userData);
           localStorage.removeItem("user");
@@ -44,7 +62,7 @@ const AppRoutes = () => {
         localStorage.removeItem("user");
       }
     }
-  }, [user, setUser]);
+  }, [user, setUser, refreshToken]);
 
   return (
     <Router>

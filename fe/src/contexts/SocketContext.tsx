@@ -58,7 +58,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const initializeSocket = () => {
     if (!user) return null
 
-    // Connect to socket server - use the same URL as the API
+    // Connect to socket server
     const newSocket = io("http://localhost:3000", {
       transports: ["websocket", "polling"],
       reconnection: true,

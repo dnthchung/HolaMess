@@ -1,15 +1,24 @@
 import User, { IUser } from '../models/User';
 import { RequestHandler } from 'express';
 import { logger } from '../utils/logger'; // Import logger
-import { createUserSession, removeUserSession } from '../utils/authMiddleware';
-import { AuthRequest } from '../utils/authMiddleware';
+import {
+  createUserSession,
+  removeUserSession,
+  AuthRequest,
+  generateTokens,
+  revokeRefreshToken,
+  revokeAllUserRefreshTokens
+} from '../utils/authMiddleware';
 import bcrypt from 'bcrypt';
 import Session from '../models/Session';
+import RefreshToken from '../models/RefreshToken';
+import config from '../config';
 
 export const signup: RequestHandler = async (req, res) => {
   try {
     const { phone, password, name } = req.body;
     const deviceInfo = req.headers['user-agent'] || 'Unknown Device';
+    const ipAddress = req.ip || req.socket.remoteAddress || 'Unknown';
 
     logger.info('Signup attempt', { phone, name }); // Log thông tin khi bắt đầu
     if (!phone || !password || !name) {
@@ -32,13 +41,29 @@ export const signup: RequestHandler = async (req, res) => {
     logger.info('Signup successful', { userId: user._id, phone, name }); // Log thông tin thành công
     // Sử dụng user._id thay vì user.id nếu schema Mongoose trả về _id
 
-    // Create session and generate token
-    const token = await createUserSession(user._id.toString(), deviceInfo);
+    // Generate access and refresh tokens
+    const { accessToken, refreshToken, expiresIn } = await generateTokens(
+      user._id.toString(),
+      deviceInfo,
+      ipAddress
+    );
+
+    // Create session as well for backward compatibility
+    await createUserSession(user._id.toString(), deviceInfo);
+
+    // Set refresh token as an HTTP-only cookie
+    res.cookie(config.REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
+      sameSite: 'strict',
+    });
 
     res.status(201).json({
       message: 'Signup successful',
       user: { id: user._id, phone, name },
-      token
+      token: accessToken,
+      expiresIn
     });
   } catch (err) {
     // Log lỗi server với logger.error, bao gồm đối tượng lỗi và ngữ cảnh request body
@@ -51,6 +76,7 @@ export const login: RequestHandler = async (req, res) => {
   try {
     const { phone, password } = req.body;
     const deviceInfo = req.headers['user-agent'] || 'Unknown Device';
+    const ipAddress = req.ip || req.socket.remoteAddress || 'Unknown';
 
     logger.info('Login attempt', { phone }); // Log thông tin
     if (!phone || !password) {
@@ -77,14 +103,30 @@ export const login: RequestHandler = async (req, res) => {
 
     logger.info('Login successful', { userId: user._id, phone: user.phone, name: user.name }); // Log thông tin thành công
      // Sử dụng user._id thay vì user.id
-    // Create session and generate token
-    const token = await createUserSession(user._id.toString(), deviceInfo);
+    // Generate access and refresh tokens
+    const { accessToken, refreshToken, expiresIn } = await generateTokens(
+      user._id.toString(),
+      deviceInfo,
+      ipAddress
+    );
+
+    // Create session as well for backward compatibility
+    await createUserSession(user._id.toString(), deviceInfo);
+
+    // Set refresh token as an HTTP-only cookie
+    res.cookie(config.REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
+      sameSite: 'strict',
+    });
 
     res.json({
       id: user._id.toString(),
       name: user.name,
       phone: user.phone,
-      token
+      token: accessToken,
+      expiresIn
     });
   } catch (err) {
     // Log lỗi server với logger.error
@@ -96,24 +138,139 @@ export const login: RequestHandler = async (req, res) => {
 export const logout: RequestHandler = async (req: AuthRequest, res) => {
   try {
     const token = req.token;
+    const refreshToken = req.cookies[config.REFRESH_TOKEN_COOKIE_NAME] || req.body.refreshToken;
 
-    if (!token) {
-      res.status(400).json({ error: 'No token provided' });
-      return;
+    // Track successful operations for response
+    let operations = {
+      sessionRemoved: false,
+      refreshTokenRevoked: false
+    };
+
+    // 1. Remove access token session
+    if (token) {
+      operations.sessionRemoved = await removeUserSession(token);
     }
 
-    const success = await removeUserSession(token);
+    // 2. Revoke refresh token if present
+    if (refreshToken) {
+      operations.refreshTokenRevoked = await revokeRefreshToken(refreshToken);
+    }
 
-    if (success) {
-      logger.info('Logout successful', { userId: req.user?._id });
-      res.json({ message: 'Logged out successfully' });
+    // Clear refresh token cookie
+    res.clearCookie(config.REFRESH_TOKEN_COOKIE_NAME);
+
+    // Log action
+    if (operations.sessionRemoved || operations.refreshTokenRevoked) {
+      logger.info('Logout successful', {
+        userId: req.user?._id,
+        sessionRemoved: operations.sessionRemoved,
+        refreshTokenRevoked: operations.refreshTokenRevoked
+      });
+
+      res.json({
+        message: 'Logged out successfully',
+        operations
+      });
     } else {
-      logger.warn('Logout failed - Session not found', { userId: req.user?._id });
-      res.status(404).json({ error: 'Session not found' });
+      logger.warn('Logout issued but no active tokens found', { userId: req.user?._id });
+      res.status(200).json({
+        message: 'No active session found to logout',
+        operations
+      });
     }
   } catch (err) {
     logger.error('Logout failed with server error', err);
     res.status(500).json({ error: 'Server error (logout)' });
+  }
+};
+
+export const refreshToken: RequestHandler = async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?._id;
+    const oldRefreshToken = req.refreshToken;
+    const deviceInfo = req.headers['user-agent'] || 'Unknown Device';
+    const ipAddress = req.ip || req.socket.remoteAddress || 'Unknown';
+
+    // Debug logging
+    logger.debug('Refresh token request received', {
+      userId: userId?.toString(),
+      hasRefreshToken: !!oldRefreshToken,
+      ipAddress,
+      deviceInfo: deviceInfo?.substring(0, 50) // Truncate for logging
+    });
+
+    if (!userId || !oldRefreshToken) {
+      logger.warn('Token refresh failed - Invalid credentials', {
+        hasUserId: !!userId,
+        hasRefreshToken: !!oldRefreshToken
+      });
+      res.status(401).json({ error: 'Unauthorized - Invalid refresh flow' });
+      return;
+    }
+
+    // Revoke the old refresh token (one-time use)
+    await revokeRefreshToken(oldRefreshToken);
+
+    // Generate new tokens
+    const { accessToken, refreshToken, expiresIn } = await generateTokens(
+      userId.toString(),
+      deviceInfo,
+      ipAddress
+    );
+
+    // Update session for backward compatibility
+    await createUserSession(userId.toString(), deviceInfo);
+
+    // Set new refresh token cookie
+    res.cookie(config.REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      maxAge: config.REFRESH_TOKEN_COOKIE_MAXAGE,
+      sameSite: 'strict',
+    });
+
+    logger.info('Token refreshed successfully', { userId });
+
+    // Return new access token
+    res.json({
+      token: accessToken,
+      expiresIn
+    });
+  } catch (err) {
+    logger.error('Token refresh failed with server error', err);
+    res.status(500).json({ error: 'Server error during token refresh' });
+  }
+};
+
+export const revokeAllTokens: RequestHandler = async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?._id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    // Revoke all refresh tokens for the user
+    const revokedCount = await revokeAllUserRefreshTokens(userId.toString());
+
+    // Remove all sessions for the user
+    const sessionsResult = await Session.deleteMany({ userId });
+
+    logger.info('All user tokens revoked', {
+      userId,
+      refreshTokensRevoked: revokedCount,
+      sessionsRemoved: sessionsResult.deletedCount
+    });
+
+    res.json({
+      message: 'All devices logged out successfully',
+      refreshTokensRevoked: revokedCount,
+      sessionsRemoved: sessionsResult.deletedCount
+    });
+  } catch (err) {
+    logger.error('Revoke all tokens failed with server error', err);
+    res.status(500).json({ error: 'Server error during revoke all tokens operation' });
   }
 };
 
@@ -147,16 +304,34 @@ export const getUserSessions: RequestHandler = async (req: AuthRequest, res) => 
     }
 
     const sessions = await Session.find({ userId }).sort({ lastActive: -1 });
+    const refreshTokens = await RefreshToken.find({
+      userId,
+      isRevoked: false
+    }).sort({ createdAt: -1 });
 
     const sessionData = sessions.map(session => ({
       id: session._id,
+      type: 'session',
       deviceInfo: session.deviceInfo,
       lastActive: session.lastActive,
       createdAt: session.createdAt,
       isCurrentSession: session.token === req.token
     }));
 
-    res.json(sessionData);
+    const refreshTokenData = refreshTokens.map(token => ({
+      id: token._id,
+      type: 'refreshToken',
+      deviceInfo: token.deviceInfo,
+      ipAddress: token.ipAddress,
+      lastActive: token.updatedAt,
+      createdAt: token.createdAt,
+      expiresAt: token.expiresAt
+    }));
+
+    res.json({
+      sessions: sessionData,
+      refreshTokens: refreshTokenData
+    });
   } catch (err) {
     logger.error('Get user sessions failed with server error', err);
     res.status(500).json({ error: 'Server error (get user sessions)' });
