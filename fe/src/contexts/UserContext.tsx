@@ -138,31 +138,44 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 
   // Manually refresh token
   const refreshToken = async () => {
-    setIsLoading(true)
+    setIsLoading(true);
 
     try {
       if (!user) {
-        throw new Error("No user to refresh token for")
+        console.error("No user data available for token refresh");
+        throw new Error("No user to refresh token for");
       }
 
-      console.log("Manually refreshing token...")
-      const response = await apiService.auth.refreshToken()
-      const { token, expiresIn } = response.data
+      console.log("Manually refreshing token...");
 
-      // Update user with new token
-      setUser({
-        ...user,
-        token,
-        expiresIn
-      })
+      try {
+        // Try direct API call to get more detailed error info
+        const response = await apiService.auth.refreshToken();
+        const { token, expiresIn } = response.data;
 
-      console.log("Manual token refresh successful")
+        console.log("✅ Manual token refresh successful", { expiresIn });
+
+        // Update user with new token
+        setUser({
+          ...user,
+          token,
+          expiresIn
+        });
+      } catch (apiError: any) {
+        // Log detailed error info
+        console.error("Token refresh API error:", {
+          status: apiError.response?.status,
+          data: apiError.response?.data,
+          message: apiError.message
+        });
+        throw apiError;
+      }
     } catch (err) {
-      console.error("Token refresh error:", err)
+      console.error("Token refresh failed, logging out user");
       // If refresh fails, logout user
-      setUser(null)
+      setUser(null);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
