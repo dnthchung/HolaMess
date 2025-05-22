@@ -1,1 +1,1 @@
-fe/README.md,fe/eslint.config.js,fe/index.html,fe/package-lock.json,fe/postcss.config.js,fe/tailwind.config.js,fe/test.html,fe/tsconfig.app.json,fe/tsconfig.json,fe/tsconfig.node.json,fe/vite.config.ts,fe/yarn.lock,fe/.gitignore,fe/public
+fe/README.md,fe/eslint.config.js,fe/index.html,fe/package-lock.json,fe/postcss.config.js,fe/tailwind.config.js,fe/test.html,fe/tsconfig.app.json,fe/tsconfig.json,fe/tsconfig.node.json,fe/vite.config.ts,fe/yarn.lock,fe/.gitignore,fe/public, fe/docs

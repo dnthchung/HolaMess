@@ -69,7 +69,7 @@ export const tokenService = {
   // Initialize token from storage (for page reloads)
   initializeFromStorage: (): void => {
     try {
-      console.log("Initializing token from storage...");
+      // console.log("Initializing token from storage...");
       const savedUser = localStorage.getItem("user");
       if (savedUser) {
         const userData = JSON.parse(savedUser);
@@ -80,10 +80,10 @@ export const tokenService = {
           accessToken = userData.token;
           tokenTimestamp = userData._lastTokenTime || Date.now();
         } else {
-          console.log("User found in storage but no token available");
+          // console.log("User found in storage but no token available");
         }
       } else {
-        console.log("No user found in storage");
+        // console.log("No user found in storage");
       }
     } catch (error) {
       console.error("Failed to initialize token from storage:", error);

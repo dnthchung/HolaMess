@@ -40,7 +40,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
       }
       return null;
     } catch (error) {
-      // console.error("Error parsing user from localStorage:", error);
+      console.error("Error parsing user from localStorage:", error);
       localStorage.removeItem("user");
       return null;
     }
@@ -134,24 +134,23 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     try {
       if (!user) {
-        // console.error("No user data available for token refresh");
         throw new Error("No user to refresh token for");
       }
-      // console.log("Manually refreshing token...");
       try {
+        //Cách chính - qua cookie
         const response = await apiService.auth.refreshToken();
         const { token, expiresIn } = response.data;
-        // console.log("✅ Manual token refresh successful", { expiresIn });
         setUser({ ...user, token, expiresIn });
       } catch (apiError: any) {
-        // console.warn(
-        //   "Cookie-based refresh failed, trying fallback with token in body",
-        //   {
-        //     status: apiError.response?.status,
-        //     data: apiError.response?.data,
-        //   }
-        // );
+        console.warn(
+          "Cookie-based refresh failed, trying fallback with token in body",
+          {
+            status: apiError.response?.status,
+            data: apiError.response?.data,
+          }
+        );
         try {
+          //Cách dự phòng - Fallback
           if (!user.token) {
             throw new Error("No token available for fallback refresh");
           }
@@ -159,18 +158,17 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             user.token
           );
           const { token, expiresIn } = fallbackResponse.data;
-          // console.log("✅ Fallback token refresh successful", { expiresIn });
           setUser({ ...user, token, expiresIn });
         } catch (fallbackError: any) {
-          // console.error("Both refresh methods failed:", {
-          //   cookieError: apiError?.message,
-          //   fallbackError: fallbackError?.message,
-          // });
+          console.error("Both refresh methods failed:", {
+            cookieError: apiError?.message,
+            fallbackError: fallbackError?.message,
+          });
           throw fallbackError;
         }
       }
     } catch (err) {
-      // console.error("Token refresh failed, logging out user");
+      console.error("Token refresh failed, logging out user");
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -185,12 +183,13 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
       const refreshDate = new Date(
         Date.now() + refreshTime
       ).toLocaleTimeString();
-      // console.log(
-      //   `Token refresh scheduled for ${refreshDate} (${refreshTime / 1000}s from now)`
-      // );
+      console.log(
+        `Token refresh scheduled for ${refreshDate} (${
+          refreshTime / 1000
+        }s from now)`
+      );
     }
     const timerId = setTimeout(() => {
-      // console.log("Token refresh timer triggered");
       if (tokenService.hasValidToken()) {
         refreshToken();
       }
