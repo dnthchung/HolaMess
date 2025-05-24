@@ -7,6 +7,13 @@ export interface IMessage extends Document {
   content: string;
   clientMessageId: string;
   read: boolean;
+  messageType: 'text' | 'voice_call';
+  callData?: {
+    duration: number;
+    startTime: Date;
+    endTime: Date;
+    status: 'completed' | 'missed' | 'declined';
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +38,23 @@ const MessageSchema: Schema = new Schema(
       type: Boolean,
       default: false,
     },
+    messageType: {
+      type: String,
+      enum: ['text', 'voice_call'],
+      default: 'text'
+    },
+    callData: {
+      type: {
+        duration: Number,
+        startTime: Date,
+        endTime: Date,
+        status: {
+          type: String,
+          enum: ['completed', 'missed', 'declined']
+        }
+      },
+      required: false
+    }
   },
   { timestamps: true }
 );
@@ -38,5 +62,6 @@ const MessageSchema: Schema = new Schema(
 // Index for querying conversations
 MessageSchema.index({ sender: 1, receiver: 1 });
 MessageSchema.index({ createdAt: -1 });
+MessageSchema.index({ messageType: 1 });
 
 export default mongoose.model<IMessage>("Message", MessageSchema);

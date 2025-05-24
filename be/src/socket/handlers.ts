@@ -2,6 +2,7 @@
 import { Server, Socket } from "socket.io";
 import Message from "../models/Message";
 import Session from "../models/Session";
+import Call from "../models/Call";
 import jwt from "jsonwebtoken";
 import config from "../config";
 import { logger } from "../utils/logger";
@@ -11,6 +12,30 @@ interface PrivateMessageData {
   sender: string;
   receiver: string;
   content: string;
+  messageType?: 'text' | 'voice_call';
+  callData?: {
+    duration: number;
+    startTime: string;
+    endTime: string;
+    status: 'completed' | 'missed' | 'declined';
+  };
+}
+
+// Voice Call Types
+interface CallOfferData {
+  callId: string;
+  callee: string;
+  offer: RTCSessionDescriptionInit;
+}
+
+interface CallAnswerData {
+  callId: string;
+  answer: RTCSessionDescriptionInit;
+}
+
+interface CallIceCandidateData {
+  callId: string;
+  candidate: RTCIceCandidateInit;
 }
 
 interface OnlineUsers {
@@ -347,6 +372,335 @@ const setupSocketHandlers = (io: Server) => {
         }
       }
     );
+
+    // ===== VOICE CALL HANDLERS =====
+
+    // Handle call initiation
+    socket.on("call_offer", async (data: CallOfferData, callback) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
+      const { callId, callee, offer } = data;
+
+      // Get caller from authenticated socket (more secure)
+      const caller = socket.userId;
+
+      if (!caller) {
+        logger.warn(`Call offer failed - No authenticated user for socket ${socket.id}`);
+        socket.emit("call_error", { error: "Authentication required" });
+        return;
+      }
+
+      try {
+        // Create call record in database
+        const call = new Call({
+          _id: callId,
+          caller,
+          callee,
+          status: 'calling',
+          startTime: new Date()
+        });
+        await call.save();
+
+        logger.info(`📞 Call initiated: ${caller} -> ${callee} (${callId})`);
+
+        // Send call offer to all callee's devices
+        if (onlineUsers[callee]) {
+          const callOfferData = {
+            callId,
+            caller,
+            callee,
+            offer,
+            timestamp: new Date().toISOString()
+          };
+
+          onlineUsers[callee].forEach((socketId) => {
+            io.to(socketId).emit("incoming_call", callOfferData);
+          });
+
+          // Update call status to ringing
+          call.status = 'ringing';
+          await call.save();
+
+          // Notify caller's other devices about outgoing call
+          notifyUserDevices(caller, socket.id, "outgoing_call", callOfferData);
+
+          if (typeof callback === "function") {
+            callback({ success: true, callId });
+          }
+        } else {
+          // Callee is offline
+          call.status = 'missed';
+          call.endTime = new Date();
+          await call.save();
+
+          logger.info(`📞 Call missed (user offline): ${caller} -> ${callee} (${callId})`);
+
+          if (typeof callback === "function") {
+            callback({ success: false, error: "User is offline" });
+          }
+        }
+      } catch (err) {
+        logger.error("Error handling call offer:", err);
+        socket.emit("call_error", { error: "Failed to initiate call" });
+      }
+    });
+
+    // Handle call answer
+    socket.on("call_answer", async (data: CallAnswerData, callback) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
+      const { callId, answer } = data;
+
+      try {
+        // Find and update call record
+        const call = await Call.findById(callId);
+        if (!call) {
+          socket.emit("call_error", { error: "Call not found" });
+          return;
+        }
+
+        // Verify user is the callee
+        if (socket.userId !== call.callee) {
+          socket.emit("call_error", { error: "Unauthorized call answer" });
+          return;
+        }
+
+        // Update call status to connected
+        call.status = 'connected';
+        await call.save();
+
+        logger.info(`📞 Call answered: ${call.caller} <-> ${call.callee} (${callId})`);
+
+        // Send answer to all caller's devices
+        const callAnswerData = {
+          callId,
+          answer,
+          timestamp: new Date().toISOString()
+        };
+
+        if (onlineUsers[call.caller]) {
+          onlineUsers[call.caller].forEach((socketId) => {
+            io.to(socketId).emit("call_answered", callAnswerData);
+          });
+        }
+
+        // Notify callee's other devices that call was answered
+        notifyUserDevices(call.callee, socket.id, "call_answered_elsewhere", { callId });
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+      } catch (err) {
+        logger.error("Error handling call answer:", err);
+        socket.emit("call_error", { error: "Failed to answer call" });
+      }
+    });
+
+    // Handle ICE candidates
+    socket.on("call_ice_candidate", async (data: CallIceCandidateData) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
+      const { callId, candidate } = data;
+
+      try {
+        // Find call record to get participants
+        const call = await Call.findById(callId);
+        if (!call) {
+          socket.emit("call_error", { error: "Call not found" });
+          return;
+        }
+
+        // Verify user is part of the call
+        if (socket.userId !== call.caller && socket.userId !== call.callee) {
+          socket.emit("call_error", { error: "Unauthorized ICE candidate" });
+          return;
+        }
+
+        // Determine the other participant
+        const otherUserId = socket.userId === call.caller ? call.callee : call.caller;
+
+        const iceCandidateData = {
+          callId,
+          candidate,
+          timestamp: new Date().toISOString()
+        };
+
+        // Forward ICE candidate to the other participant's devices
+        if (onlineUsers[otherUserId]) {
+          onlineUsers[otherUserId].forEach((socketId) => {
+            io.to(socketId).emit("call_ice_candidate", iceCandidateData);
+          });
+        }
+
+        logger.debug(`📞 ICE candidate forwarded for call ${callId}`);
+      } catch (err) {
+        logger.error("Error handling ICE candidate:", err);
+      }
+    });
+
+    // Handle call end
+    socket.on("call_end", async (data: { callId: string }, callback) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
+      const { callId } = data;
+      const endedBy = socket.userId;
+
+      if (!endedBy) {
+        logger.warn(`Call end failed - No authenticated user for socket ${socket.id}`);
+        socket.emit("call_error", { error: "Authentication required" });
+        return;
+      }
+
+      try {
+        // Find and update call record
+        const call = await Call.findById(callId);
+        if (!call) {
+          socket.emit("call_error", { error: "Call not found" });
+          return;
+        }
+
+        // Verify user is part of the call
+        if (endedBy !== call.caller && endedBy !== call.callee) {
+          socket.emit("call_error", { error: "Unauthorized call end" });
+          return;
+        }
+
+        // Update call record
+        call.status = 'ended';
+        call.endTime = new Date();
+        const duration = call.calculateDuration();
+        call.duration = duration;
+        await call.save();
+
+        logger.info(`📞 Call ended: ${call.caller} <-> ${call.callee} (${callId}) - Duration: ${duration}s`);
+
+        // Determine the other participant
+        const otherUserId = call.caller === endedBy ? call.callee : call.caller;
+
+        const callEndData = {
+          callId,
+          endedBy,
+          duration,
+          timestamp: new Date().toISOString()
+        };
+
+        // Notify the other participant's devices
+        if (onlineUsers[otherUserId]) {
+          onlineUsers[otherUserId].forEach((socketId) => {
+            io.to(socketId).emit("call_ended", callEndData);
+          });
+        }
+
+        // Notify sender's other devices
+        notifyUserDevices(endedBy, socket.id, "call_ended", callEndData);
+
+        // Create call history message for both participants
+        if (duration > 0) {
+          const callMessage = {
+            sender: call.caller,
+            receiver: call.callee,
+            content: "Cuộc gọi thoại",
+            messageType: 'voice_call',
+            callData: {
+              duration,
+              startTime: call.startTime.toISOString(),
+              endTime: call.endTime!.toISOString(),
+              status: 'completed'
+            }
+          };
+
+          // Save call message to database
+          const message = new Message(callMessage);
+          await message.save();
+
+          // Send call message to both participants
+          const messageResponse = {
+            _id: message._id,
+            ...callMessage,
+            createdAt: message.createdAt,
+            read: false
+          };
+
+          // Send to caller's devices
+          if (onlineUsers[call.caller]) {
+            onlineUsers[call.caller].forEach((socketId) => {
+              io.to(socketId).emit("private_message", messageResponse);
+            });
+          }
+
+          // Send to callee's devices
+          if (onlineUsers[call.callee]) {
+            onlineUsers[call.callee].forEach((socketId) => {
+              io.to(socketId).emit("private_message", messageResponse);
+            });
+          }
+        }
+
+        if (typeof callback === "function") {
+          callback({ success: true, duration });
+        }
+      } catch (err) {
+        logger.error("Error handling call end:", err);
+        socket.emit("call_error", { error: "Failed to end call" });
+      }
+    });
+
+    // Handle call decline
+    socket.on("call_decline", async (data: { callId: string }, callback) => {
+      // Verify token validity first
+      if (!(await authenticateSocketOperation(socket))) return;
+
+      const { callId } = data;
+
+      try {
+        // Find and update call record
+        const call = await Call.findById(callId);
+        if (!call) {
+          socket.emit("call_error", { error: "Call not found" });
+          return;
+        }
+
+        // Verify user is the callee
+        if (socket.userId !== call.callee) {
+          socket.emit("call_error", { error: "Unauthorized call decline" });
+          return;
+        }
+
+        // Update call status to declined
+        call.status = 'declined';
+        call.endTime = new Date();
+        await call.save();
+
+        logger.info(`📞 Call declined: ${call.caller} -> ${call.callee} (${callId})`);
+
+        const callDeclineData = {
+          callId,
+          declinedBy: call.callee,
+          timestamp: new Date().toISOString()
+        };
+
+        // Notify caller's devices
+        if (onlineUsers[call.caller]) {
+          onlineUsers[call.caller].forEach((socketId) => {
+            io.to(socketId).emit("call_declined", callDeclineData);
+          });
+        }
+
+        // Notify callee's other devices
+        notifyUserDevices(call.callee, socket.id, "call_declined_elsewhere", { callId });
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+      } catch (err) {
+        logger.error("Error handling call decline:", err);
+        socket.emit("call_error", { error: "Failed to decline call" });
+      }
+    });
 
     // Handle disconnect
     socket.on("disconnect", () => {

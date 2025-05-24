@@ -32,6 +32,11 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
       const savedUser = localStorage.getItem("user");
       if (savedUser) {
         const parsedUser = JSON.parse(savedUser);
+        // Ensure _lastTokenTime exists for token expiration calculations
+        if (!parsedUser._lastTokenTime && parsedUser.token) {
+          parsedUser._lastTokenTime = Date.now();
+          localStorage.setItem("user", JSON.stringify(parsedUser));
+        }
         // console.log("Loaded user from localStorage", {
         //   name: parsedUser.name,
         //   id: parsedUser.id,
@@ -56,7 +61,12 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
     // );
     setUserState(newUser);
     if (newUser) {
-      localStorage.setItem("user", JSON.stringify(newUser));
+      // Add timestamp when setting user for token expiration calculations
+      const userWithTimestamp = {
+        ...newUser,
+        _lastTokenTime: Date.now()
+      };
+      localStorage.setItem("user", JSON.stringify(userWithTimestamp));
       if (newUser.token) {
         tokenService.setToken(newUser.token, newUser.expiresIn || 0);
       }
@@ -140,7 +150,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
         //Cách chính - qua cookie
         const response = await apiService.auth.refreshToken();
         const { token, expiresIn } = response.data;
-        setUser({ ...user, token, expiresIn });
+        const updatedUser = { ...user, token, expiresIn, _lastTokenTime: Date.now() };
+        setUser(updatedUser);
       } catch (apiError: any) {
         console.warn(
           "Cookie-based refresh failed, trying fallback with token in body",
@@ -158,7 +169,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             user.token
           );
           const { token, expiresIn } = fallbackResponse.data;
-          setUser({ ...user, token, expiresIn });
+          const updatedUser = { ...user, token, expiresIn, _lastTokenTime: Date.now() };
+          setUser(updatedUser);
         } catch (fallbackError: any) {
           console.error("Both refresh methods failed:", {
             cookieError: apiError?.message,

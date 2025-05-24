@@ -7,6 +7,8 @@ import LoginPage from "./pages/LoginPage"
 import ChatPage from "./pages/ChatPage"
 import { UserProvider, useUser } from "./contexts/UserContext"
 import { SocketProvider } from "./contexts/SocketContext"
+import { VoiceCallProvider } from "./contexts/VoiceCallContext"
+import VoiceCallWindow from "./components/VoiceCallWindow"
 
 // AuthenticatedRoute component to protect routes
 const AuthenticatedRoute = ({ children }: { children: JSX.Element }) => {
@@ -38,9 +40,12 @@ const AppRoutes = () => {
 
           // If token exists but is about to expire (less than 20% of its lifetime left),
           // perform a token refresh immediately on app startup
-          if (userData.token && userData.expiresIn) {
-            const remainingTime = userData.expiresIn * 1000 - (Date.now() - (userData._lastTokenTime || 0));
-            const refreshThreshold = userData.expiresIn * 200; // 20% of total time
+          if (userData.token && userData.expiresIn && userData._lastTokenTime) {
+            const tokenLifetime = userData.expiresIn * 1000; // Convert to milliseconds
+            const tokenCreatedAt = userData._lastTokenTime;
+            const tokenExpiresAt = tokenCreatedAt + tokenLifetime;
+            const remainingTime = tokenExpiresAt - Date.now();
+            const refreshThreshold = userData.expiresIn * 200; // 20% of total time in milliseconds
 
             if (remainingTime < refreshThreshold) {
               console.log('🔄 Token near expiration on app startup. Refreshing token...');
@@ -52,6 +57,8 @@ const AppRoutes = () => {
               console.log('✅ Token still valid on app startup. Remaining time:',
                 Math.floor(remainingTime / 1000), 'seconds');
             }
+          } else {
+            console.log('⚠️ Token data incomplete, may need to refresh');
           }
         } else {
           console.error("Invalid user data in localStorage:", userData);
@@ -94,6 +101,9 @@ const AppRoutes = () => {
           />
           <Route path="/" element={<Navigate to={user ? "/chat" : "/login"} />} />
         </Routes>
+
+        {/* Voice Call Window - Global component */}
+        <VoiceCallWindow />
       </div>
     </Router>
   );
@@ -103,7 +113,9 @@ function App() {
   return (
     <UserProvider>
       <SocketProvider>
-        <AppRoutes />
+        <VoiceCallProvider>
+          <AppRoutes />
+        </VoiceCallProvider>
       </SocketProvider>
     </UserProvider>
   )

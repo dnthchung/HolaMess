@@ -73,14 +73,26 @@ export const tokenService = {
       const savedUser = localStorage.getItem("user");
       if (savedUser) {
         const userData = JSON.parse(savedUser);
-        if (userData.token) {
+        if (userData.token && userData.expiresIn && userData._lastTokenTime) {
           console.log("Found token in storage, setting access token");
-          // Don't initialize expiration time from storage
-          // to force a refresh on page reload for safety
-          accessToken = userData.token;
-          tokenTimestamp = userData._lastTokenTime || Date.now();
+
+          // Calculate actual expiration time from stored data
+          const tokenLifetime = userData.expiresIn * 1000; // Convert to milliseconds
+          const tokenCreatedAt = userData._lastTokenTime;
+          const calculatedExpiration = tokenCreatedAt + tokenLifetime;
+
+          // Only set token if it's not expired
+          if (calculatedExpiration > Date.now()) {
+            accessToken = userData.token;
+            tokenExpiration = calculatedExpiration;
+            tokenTimestamp = tokenCreatedAt;
+            console.log("✅ Token restored from storage, expires in", Math.floor((calculatedExpiration - Date.now()) / 1000), "seconds");
+          } else {
+            console.log("❌ Token in storage is expired, clearing");
+            tokenService.clearToken();
+          }
         } else {
-          // console.log("User found in storage but no token available");
+          console.log("No valid token data found in storage");
         }
       } else {
         // console.log("No user found in storage");
